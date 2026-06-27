@@ -44,6 +44,11 @@ except Exception:  # pragma: no cover
 
 GOLDENHAWK_MODEL = os.getenv("GOLDENHAWK_MODEL", "claude-haiku-4-5")
 
+# Groq is a free (no credit card) provider that runs fast open models via an
+# OpenAI-compatible API. Get your OWN key at https://console.groq.com/keys.
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+
 # ── Persona / instructions ────────────────────────────────────────────────
 SYSTEM_PROMPT = """\
 You are GoldenHawk 🐥, the friendly campus assistant for Wilfrid Laurier
@@ -100,18 +105,26 @@ def _build_messages(message: str, history: list[dict]) -> list[dict]:
     return messages
 
 
-def _llm_reply(message: str, history: list[dict], campus_context: str) -> str:
+_EMPTY_REPLY = (
+    "I didn't quite catch that — try asking about a route, building hours, "
+    "or a good place to study 🐥"
+)
+
+
+def _system_with_context(campus_context: str) -> str:
+    return f"{SYSTEM_PROMPT}\n\n=== CAMPUS DATA ===\n{campus_context}"
+
+
+def _anthropic_reply(message: str, history: list[dict], campus_context: str) -> str:
     """Ask Claude. Raises on any API/SDK error so the caller can fall back."""
     client = Anthropic()  # reads ANTHROPIC_API_KEY from the environment
-
-    system = f"{SYSTEM_PROMPT}\n\n=== CAMPUS DATA ===\n{campus_context}"
 
     # Plain call — no thinking/effort params, which keeps it fast and works on
     # lightweight models like Haiku 4.5 (those params 400 on Haiku).
     response = client.messages.create(
         model=GOLDENHAWK_MODEL,
         max_tokens=1024,
-        system=system,
+        system=_system_with_context(campus_context),
         messages=_build_messages(message, history),
     )
 
@@ -123,10 +136,29 @@ def _llm_reply(message: str, history: list[dict], campus_context: str) -> str:
         block.text for block in response.content if block.type == "text"
     ).strip()
 
-    return reply or (
-        "I didn't quite catch that — try asking about a route, building hours, "
-        "or a good place to study 🐥"
+    return reply or _EMPTY_REPLY
+
+
+def _groq_reply(message: str, history: list[dict], campus_context: str) -> str:
+    """Ask Groq (free, OpenAI-compatible). Raises on any error so we can fall back."""
+    import httpx  # bundled CA certs; comes in via the anthropic dependency
+
+    key = os.getenv("GROQ_API_KEY")
+
+    # OpenAI-style format: system prompt is the first message.
+    messages = [{"role": "system", "content": _system_with_context(campus_context)}]
+    messages += _build_messages(message, history)
+
+    resp = httpx.post(
+        GROQ_URL,
+        headers={"Authorization": f"Bearer {key}"},
+        json={"model": GROQ_MODEL, "messages": messages, "max_tokens": 1024},
+        timeout=30,
     )
+    resp.raise_for_status()
+
+    reply = (resp.json()["choices"][0]["message"]["content"] or "").strip()
+    return reply or _EMPTY_REPLY
 
 
 # ── Keyword fallback (used when there's no API key or the call fails) ───────
@@ -167,16 +199,36 @@ def _rule_reply(message: str) -> str:
             "events, goose alerts, and accessible entrances 🐥 What do you need?")
 
 
-def ai_available() -> bool:
-    """True when a real LLM call is possible (SDK installed + key present)."""
+def _anthropic_available() -> bool:
     return _ANTHROPIC_IMPORT_OK and bool(os.getenv("ANTHROPIC_API_KEY"))
 
 
+def _groq_available() -> bool:
+    return bool(os.getenv("GROQ_API_KEY"))
+
+
+def ai_available() -> bool:
+    """True when a real LLM call is possible (a provider key is configured)."""
+    return _anthropic_available() or _groq_available()
+
+
 def get_reply(message: str, history: list[dict], campus_context: str) -> tuple[str, str]:
-    """Return (reply_text, source) where source is 'goldenhawk-ai' or 'fallback'."""
-    if ai_available():
+    """Return (reply_text, source) where source is 'goldenhawk-ai' or 'fallback'.
+
+    Uses whichever provider has a key set — Claude if ANTHROPIC_API_KEY is
+    present, otherwise free Groq if GROQ_API_KEY is set. Falls back to keyword
+    rules if neither is configured or the call fails.
+    """
+    if _anthropic_available():
         try:
-            return _llm_reply(message, history, campus_context), "goldenhawk-ai"
+            return _anthropic_reply(message, history, campus_context), "goldenhawk-ai"
         except Exception as exc:  # pragma: no cover - network/SDK errors
-            print(f"[GoldenHawk] LLM call failed, using fallback: {exc}")
+            print(f"[GoldenHawk] Claude call failed, trying next option: {exc}")
+
+    if _groq_available():
+        try:
+            return _groq_reply(message, history, campus_context), "goldenhawk-ai"
+        except Exception as exc:  # pragma: no cover - network errors
+            print(f"[GoldenHawk] Groq call failed, using fallback: {exc}")
+
     return _rule_reply(message), "fallback"
