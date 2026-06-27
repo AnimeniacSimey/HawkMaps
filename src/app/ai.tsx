@@ -23,9 +23,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BRAND } from '@/constants/theme';
 
 // ── API config ─────────────────────────────────────────────────────────
-// Replace with your deployed Python backend URL.
-// In development: 'http://YOUR_LOCAL_IP:8000'  (NOT localhost — device needs LAN IP)
-const API_BASE = '';   // e.g. 'http://192.168.1.42:8000'
+// Points at the Python backend that runs GoldenHawk AI.
+// Set it in a `.env` file at the project root (Expo auto-loads EXPO_PUBLIC_*):
+//   EXPO_PUBLIC_API_BASE=http://192.168.1.42:8000
+// Use your machine's LAN IP, NOT localhost — a physical phone can't reach
+// localhost on your computer. If unset, the chat uses local demo replies.
+const API_BASE = process.env.EXPO_PUBLIC_API_BASE ?? '';
 
 // ── Demo fallback responses (used when API_BASE is empty / unreachable) ─
 const DEMO_RESPONSES: Array<{ keywords: string[]; reply: string }> = [

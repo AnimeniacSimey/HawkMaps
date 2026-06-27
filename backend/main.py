@@ -15,6 +15,8 @@ from typing import Optional
 from datetime import datetime, timedelta
 import os
 
+import goldenhawk
+
 app = FastAPI(title="Hawk Maps API", version="0.1.0")
 
 # ── CORS (allow React dev server) ─────────────────────────────────────────
@@ -153,6 +155,16 @@ BUILDINGS_DB = [
     {"id":6, "name":"Athletic Complex",    "lat":43.4736,"lng":-80.5244, "accessible_entrance":"North entrance off University Ave"},
 ]
 
+# Today's hours by building id. TODO: pull from live Laurier data source.
+BUILDING_HOURS = {
+    1: {"open": "07:00", "close": "22:00"},
+    2: {"open": "07:30", "close": "22:30"},
+    3: {"open": "08:00", "close": "00:00"},
+    4: {"open": "07:00", "close": "21:00"},
+    5: {"open": "07:00", "close": "22:00"},
+    6: {"open": "06:00", "close": "23:00"},
+}
+
 @app.get("/api/buildings")
 def list_buildings():
     return BUILDINGS_DB
@@ -160,15 +172,7 @@ def list_buildings():
 @app.get("/api/buildings/{building_id}/hours")
 def building_hours(building_id: int):
     """Returns today's hours. TODO: pull from live Laurier data source."""
-    hours = {
-        1: {"open": "07:00", "close": "22:00"},
-        2: {"open": "07:30", "close": "22:30"},
-        3: {"open": "08:00", "close": "00:00"},
-        4: {"open": "07:00", "close": "21:00"},
-        5: {"open": "07:00", "close": "22:00"},
-        6: {"open": "06:00", "close": "23:00"},
-    }
-    return hours.get(building_id, {"open": "N/A", "close": "N/A"})
+    return BUILDING_HOURS.get(building_id, {"open": "N/A", "close": "N/A"})
 
 # ── Goose Sightings ───────────────────────────────────────────────────────
 GOOSE_DB: list[dict] = [
@@ -207,39 +211,66 @@ def create_review(review: ReviewCreate, user=Depends(get_current_user)):
     return new_r
 
 # ── GoldenHawk AI Chat ────────────────────────────────────────────────────
+def build_campus_context() -> str:
+    """Serialize the live campus data into a text block the LLM can reason over."""
+    lines: list[str] = ["Wilfrid Laurier University — Waterloo Campus", ""]
+
+    lines.append("BUILDINGS (with today's hours and accessible entrances):")
+    for b in BUILDINGS_DB:
+        h = BUILDING_HOURS.get(b["id"], {})
+        lines.append(
+            f'- {b["name"]} — open {h.get("open", "N/A")}–{h.get("close", "N/A")} '
+            f'today. Accessible entrance: {b["accessible_entrance"]}. '
+            f'(lat {b["lat"]}, lng {b["lng"]})'
+        )
+
+    lines.append("")
+    lines.append("STUDY SPACES (live availability):")
+    for s in SPACES_DB:
+        lines.append(
+            f'- {s["name"]} in {s["building"]} — {s["fill_pct"]}% full '
+            f'({fill_to_status(s["fill_pct"])}), {s["type"]}, {s["seats"]} seats'
+        )
+
+    lines.append("")
+    lines.append("CAMPUS EVENTS:")
+    for e in EVENTS_DB:
+        club = f' by {e["club"]}' if e.get("club") else ""
+        lines.append(f'- {e["title"]}{club} — {e["location"]}, {e["start"]}')
+
+    lines.append("")
+    lines.append("GOOSE SIGHTINGS (user-reported):")
+    for g in GOOSE_DB:
+        lines.append(f'- {g["severity"]} sighting: {g.get("note", "")}')
+
+    return "\n".join(lines)
+
+
 @app.post("/api/ai/chat")
-def ai_chat(req: ChatRequest, user=Depends(get_current_user)):
+def ai_chat(req: ChatRequest):
     """
     GoldenHawk AI endpoint.
-    TODO: Replace rule-based responses with an LLM call (e.g. OpenAI / Anthropic)
-    that has campus data injected as context.
+
+    Sends the student's message + recent history to Claude with live campus
+    data injected as context. Falls back to keyword rules when no API key is
+    configured or the model is unreachable (see backend/goldenhawk.py).
+
+    No auth required for Sprint 1 so the chat tab works in the demo; later
+    sprints can gate this behind Laurier SSO and personalize per student.
     """
-    msg = req.message.lower()
-
-    RULE_RESPONSES = {
-        ("route", "how do i get", "direction", "navigate"):
-            "From the main concourse, take the indoor tunnel through Peters, then follow the underground path to BA. Room 202 is on the east side of floor 2 — about 4 minutes 🗺️",
-        ("goose", "geese"):
-            "⚠️ 3 goose sightings near Alumni Hall today. I'd recommend using the Seagram Dr side entrance instead. Stay safe! 🪿",
-        ("hours", "open", "close", "when"):
-            "Peters Library is open 8 AM–12 AM. The Dining Hall runs 7 AM–9 PM. Byte Café opens at 7:30 AM ☕",
-        ("study", "quiet", "work"):
-            "Peters Library 2nd floor is 40% full right now — great spot for quiet work. Lazaridis atrium is also open with lots of seats 📚",
-        ("event", "club", "what's on"):
-            "This week: CS Hackathon (Nov 8, BA 202), Open Mic Night (Nov 9, Turret), Eco Fair (Nov 10, Concourse) 🎉",
-        ("food", "eat", "dining", "cafe", "menu"):
-            "Dining Hall is running their new autumn menu this week! Byte Café and the food court are also open on campus 🍽️",
-        ("accessible", "wheelchair", "elevator", "ramp"):
-            "Most buildings have accessible entrances on University Ave. Peters Library has an east entrance ramp. I can guide you to any specific building ♿",
-    }
-
-    for keys, reply in RULE_RESPONSES.items():
-        if any(k in msg for k in keys):
-            return {"reply": reply}
-
-    return {"reply": "I can help with indoor routes, building hours, study space availability, club events, goose alerts, and accessible entrances 🐥 What do you need?"}
+    reply, source = goldenhawk.get_reply(
+        message=req.message,
+        history=req.history,
+        campus_context=build_campus_context(),
+    )
+    return {"reply": reply, "source": source}
 
 # ── Health check ──────────────────────────────────────────────────────────
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "app": "Hawk Maps", "version": "0.1.0"}
+    return {
+        "status": "ok",
+        "app": "Hawk Maps",
+        "version": "0.1.0",
+        "goldenhawk_ai": "connected" if goldenhawk.ai_available() else "fallback (no API key)",
+    }

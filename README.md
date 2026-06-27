@@ -121,17 +121,36 @@ That's it — Expo Router handles the routing automatically.
 
 ```bash
 cd backend
-pip install fastapi uvicorn python-jose passlib bcrypt python-dotenv
+pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
-Then set `API_BASE` in `src/app/ai.tsx` to your local IP address:
+Then point the app at your backend by creating a `.env` file in the **project
+root** (Expo auto-loads `EXPO_PUBLIC_*` vars):
 
-```ts
-const API_BASE = 'http://192.168.1.42:8000';  // your machine's LAN IP
+```bash
+# .env  (project root)
+EXPO_PUBLIC_API_BASE=http://192.168.1.42:8000   # your machine's LAN IP
 ```
 
 > Use your LAN IP, not `localhost` — physical devices can't reach localhost on your computer.
+
+### GoldenHawk AI 🐥
+
+The GoldenHawk chat tab is wired to **Claude** (Anthropic). To enable real AI
+replies, add your API key to `backend/.env`:
+
+```bash
+cd backend
+cp .env.example .env       # then paste your key
+# ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Get a key at [console.anthropic.com](https://console.anthropic.com). Without a
+key, GoldenHawk still answers using built-in keyword fallback replies, so the
+chat tab works offline. Live campus data (buildings, hours, study-space
+availability, events, goose sightings) is injected as context on every request
+— see [`backend/goldenhawk.py`](backend/goldenhawk.py).
 
 ### Available Endpoints
 

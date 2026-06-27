@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-jose[cryptography]
+passlib
+bcrypt
+python-dotenv
+
+# GoldenHawk AI assistant — Claude (Anthropic) LLM
+anthropic
