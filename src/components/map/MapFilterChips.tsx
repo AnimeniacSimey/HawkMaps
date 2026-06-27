@@ -9,7 +9,6 @@
 import { ScrollView, StyleSheet, Text, TouchableOpacity } from 'react-native';
 
 import { MAP_LAYER_CONFIG, MapLocationType } from '@/data/locations';
-import { BRAND } from '@/constants/theme';
 
 type Props = {
   visibleTypes: Set<MapLocationType>;
@@ -48,6 +47,7 @@ export default function MapFilterChips({ visibleTypes, onToggle }: Props) {
 
 const styles = StyleSheet.create({
   scroll: {
+    flexGrow: 0.1,
     flexShrink: 0,
   },
   row: {
@@ -57,6 +57,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   chip: {
+    //alignSelf: 'flex-start',
     backgroundColor: '#fff',
     borderWidth:      0.5,
     borderColor:      'rgba(0,0,0,0.15)',
