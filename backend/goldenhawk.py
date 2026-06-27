@@ -16,7 +16,8 @@ Setup:
     # then put your key in backend/.env :  ANTHROPIC_API_KEY=sk-ant-...
 
 Optional env vars:
-    GOLDENHAWK_MODEL   Claude model id (default: claude-opus-4-8)
+    GOLDENHAWK_MODEL   Claude model id (default: claude-haiku-4-5 — cheap & fast,
+                       plenty for a campus chatbot; override for a stronger model)
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ except Exception:  # pragma: no cover
     Anthropic = None  # type: ignore
     _ANTHROPIC_IMPORT_OK = False
 
-GOLDENHAWK_MODEL = os.getenv("GOLDENHAWK_MODEL", "claude-opus-4-8")
+GOLDENHAWK_MODEL = os.getenv("GOLDENHAWK_MODEL", "claude-haiku-4-5")
 
 # ── Persona / instructions ────────────────────────────────────────────────
 SYSTEM_PROMPT = """\
@@ -105,12 +106,12 @@ def _llm_reply(message: str, history: list[dict], campus_context: str) -> str:
 
     system = f"{SYSTEM_PROMPT}\n\n=== CAMPUS DATA ===\n{campus_context}"
 
+    # Plain call — no thinking/effort params, which keeps it fast and works on
+    # lightweight models like Haiku 4.5 (those params 400 on Haiku).
     response = client.messages.create(
         model=GOLDENHAWK_MODEL,
         max_tokens=1024,
         system=system,
-        thinking={"type": "adaptive"},          # let Claude decide how much to think
-        output_config={"effort": "low"},        # keep replies snappy for chat
         messages=_build_messages(message, history),
     )
 
