@@ -190,6 +190,49 @@ def report_goose(report: GooseReport, user=Depends(get_current_user)):
     GOOSE_DB.append(new_r)
     return new_r
 
+# ── Indoor routes, lecture halls & closures (powers GoldenHawk AI-01) ──────
+# Indoor / covered connections between buildings — the data GoldenHawk needs to
+# suggest the fastest *indoor* route and keep students out of the rain.
+INDOOR_CONNECTIONS = [
+    {"id": 1, "from": "Peters Building", "to": "BA Building",
+     "type": "indoor tunnel", "minutes": 4, "covered": True,
+     "note": "Underground tunnel — fastest dry route, great in rain/snow."},
+    {"id": 2, "from": "Science Building", "to": "Arts Building",
+     "type": "covered walkway", "minutes": 3, "covered": True,
+     "note": "Sheltered link bridge on the 2nd floor."},
+    {"id": 3, "from": "BA Building", "to": "Lazaridis Hall",
+     "type": "indoor concourse", "minutes": 5, "covered": True,
+     "note": "Connected through the main concourse without going outside."},
+]
+
+# Where notable lecture halls / classrooms live, so GoldenHawk can resolve a
+# student's "my lecture hall" to a building and route them there.
+LECTURE_HALLS = [
+    {"room": "BA 202",        "building": "BA Building",        "note": "Large lecture theatre, east side floor 2."},
+    {"room": "Arts 1E1–1E6",  "building": "Arts Building",      "note": "First-floor lecture theatres."},
+    {"room": "SBE 1230",      "building": "Lazaridis Hall",     "note": "Tiered lecture hall, main floor."},
+    {"room": "N1001",         "building": "Science Building",   "note": "Ground-floor science lecture hall."},
+]
+
+# Temporary closures / construction the AI should route around.
+CLOSURES_DB = [
+    {"id": 1, "location": "Peters Building — main entrance",
+     "detail": "Under repair until Nov 15. Use the south entrance on King St.",
+     "reroute": "Enter via the BA tunnel or the King St south door."},
+]
+
+@app.get("/api/indoor-routes")
+def list_indoor_routes():
+    return INDOOR_CONNECTIONS
+
+@app.get("/api/lecture-halls")
+def list_lecture_halls():
+    return LECTURE_HALLS
+
+@app.get("/api/closures")
+def list_closures():
+    return CLOSURES_DB
+
 # ── Reviews ───────────────────────────────────────────────────────────────
 REVIEWS_DB: list[dict] = []
 
@@ -223,6 +266,23 @@ def build_campus_context() -> str:
             f'today. Accessible entrance: {b["accessible_entrance"]}. '
             f'(lat {b["lat"]}, lng {b["lng"]})'
         )
+
+    lines.append("")
+    lines.append("LECTURE HALLS (which building each room is in):")
+    for r in LECTURE_HALLS:
+        lines.append(f'- {r["room"]} is in {r["building"]} — {r["note"]}')
+
+    lines.append("")
+    lines.append("INDOOR / COVERED ROUTES (use these for the fastest dry route):")
+    for c in INDOOR_CONNECTIONS:
+        lines.append(
+            f'- {c["from"]} ↔ {c["to"]} via {c["type"]}, ~{c["minutes"]} min. {c["note"]}'
+        )
+
+    lines.append("")
+    lines.append("CLOSURES (route around these):")
+    for c in CLOSURES_DB:
+        lines.append(f'- {c["location"]}: {c["detail"]} Reroute: {c["reroute"]}')
 
     lines.append("")
     lines.append("STUDY SPACES (live availability):")
