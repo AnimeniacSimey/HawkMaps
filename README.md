@@ -51,7 +51,10 @@ src/
     └── locations.ts        ← ⭐ ALL map pin data lives here
 
 backend/
-└── main.py                 ← FastAPI backend (Python)
+├── main.py                 ← FastAPI backend (routes + campus data)
+├── goldenhawk.py           ← 🐥 GoldenHawk AI brain (Claude / Groq + fallback)
+├── requirements.txt        ← Python dependencies
+└── .env.example            ← copy to .env, add your AI key
 ```
 
 ---
@@ -137,20 +140,24 @@ EXPO_PUBLIC_API_BASE=http://192.168.1.42:8000   # your machine's LAN IP
 
 ### GoldenHawk AI 🐥
 
-The GoldenHawk chat tab is wired to **Claude** (Anthropic). To enable real AI
-replies, add your API key to `backend/.env`:
+The GoldenHawk chat tab talks to a real LLM. It supports two providers — add
+**one** key to `backend/.env`:
 
 ```bash
 cd backend
-cp .env.example .env       # then paste your key
-# ANTHROPIC_API_KEY=sk-ant-...
+cp .env.example .env        # then paste ONE key
+# GROQ_API_KEY=gsk_...       ← free, no credit card  (console.groq.com/keys)
+# ANTHROPIC_API_KEY=sk-ant-... ← Claude (console.anthropic.com)
 ```
 
-Get a key at [console.anthropic.com](https://console.anthropic.com). Without a
-key, GoldenHawk still answers using built-in keyword fallback replies, so the
-chat tab works offline. Live campus data (buildings, hours, study-space
-availability, events, goose sightings) is injected as context on every request
-— see [`backend/goldenhawk.py`](backend/goldenhawk.py).
+- **Groq** — free, no card. Get a key at [console.groq.com/keys](https://console.groq.com/keys).
+- **Claude** — get a key at [console.anthropic.com](https://console.anthropic.com).
+
+If both keys are set, Claude is used. Without any key, GoldenHawk still answers
+using built-in keyword fallback replies, so the chat tab works offline. Live
+campus data (buildings, hours, indoor routes, lecture halls, study-space
+availability, events, closures, goose sightings) is injected as context on
+every request — see [`backend/goldenhawk.py`](backend/goldenhawk.py).
 
 ### Available Endpoints
 
@@ -158,15 +165,22 @@ availability, events, goose sightings) is injected as context on every request
 |--------|------|-------------|
 | POST | `/api/auth/login` | Email + password login |
 | GET  | `/api/auth/sso`   | Microsoft SSO redirect |
+| GET  | `/api/auth/me`    | Current user (auth required) |
 | GET  | `/api/events`     | List events (optional `?search=`, `?tag=`) |
 | POST | `/api/events`     | Create event (auth required) |
+| GET  | `/api/events/{id}` | Single event by id |
 | GET  | `/api/spaces`     | Study space availability |
 | GET  | `/api/buildings`  | Campus buildings list |
+| GET  | `/api/buildings/{id}/hours` | Today's hours for a building |
 | GET  | `/api/goose`      | Goose sighting reports |
 | POST | `/api/goose`      | Submit goose sighting (auth required) |
+| GET  | `/api/indoor-routes` | Indoor/covered routes between buildings (powers GoldenHawk) |
+| GET  | `/api/lecture-halls` | Lecture hall → building map |
+| GET  | `/api/closures`   | Active campus closures |
 | GET  | `/api/reviews`    | Reviews (optional `?target_id=`, `?target_type=`) |
 | POST | `/api/reviews`    | Submit review (auth required) |
-| POST | `/api/ai/chat`    | GoldenHawk AI chat |
+| POST | `/api/ai/chat`    | GoldenHawk AI chat (Claude / Groq, campus data injected) |
+| GET  | `/api/health`     | Health check + AI connection status |
 
 ---
 
