@@ -185,8 +185,17 @@ def list_goose_reports():
     return GOOSE_DB
 
 @app.post("/api/goose", status_code=201)
-def report_goose(report: GooseReport, user=Depends(get_current_user)):
-    new_r = {"id": len(GOOSE_DB)+1, **report.dict(), "reported_by": user["username"], "reported_at": datetime.utcnow().isoformat()}
+def report_goose(report: GooseReport):
+    """
+    Self-report a goose sighting from the map (long-press a spot to drop a pin).
+
+    No auth required for Sprint 1, same as /api/ai/chat, so the report flow
+    works before Laurier SSO is wired in. Revisit once get_current_user is
+    live to tag reports with the reporting student (reported_by).
+    """
+    if report.severity not in ("mild", "aggressive"):
+        raise HTTPException(status_code=400, detail="severity must be 'mild' or 'aggressive'")
+    new_r = {"id": len(GOOSE_DB) + 1, **report.dict(), "reported_at": datetime.utcnow().isoformat()}
     GOOSE_DB.append(new_r)
     return new_r
 

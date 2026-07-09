@@ -9,6 +9,11 @@
  *   locations       Array of MapLocation objects from locations.ts
  *   visibleTypes    Set of layer types currently toggled on (controlled by parent)
  *   onMarkerPress   Called with the MapLocation when a popup is tapped
+ *   reportMode      When true, long-pressing the map drops a temporary pin and
+ *                    calls onMapLongPress with the tapped coordinates, instead
+ *                    of the normal marker-tap behaviour. Used for goose reports.
+ *   onMapLongPress  Called with (lat, lng) when the map is long-pressed while
+ *                    reportMode is true.
  */
 
 import { StyleSheet, View } from 'react-native';
@@ -17,12 +22,20 @@ import { WebView } from 'react-native-webview';
 import { MAP_LAYER_CONFIG, MapLocation, MapLocationType } from '@/data/locations';
 
 type Props = {
-  locations:     MapLocation[];
-  visibleTypes:  Set<MapLocationType>;
+  locations:      MapLocation[];
+  visibleTypes:   Set<MapLocationType>;
   onMarkerPress?: (location: MapLocation) => void;
+  reportMode?:    boolean;
+  onMapLongPress?: (lat: number, lng: number) => void;
 };
 
-export default function CampusMap({ locations, visibleTypes, onMarkerPress }: Props) {
+export default function CampusMap({
+  locations,
+  visibleTypes,
+  onMarkerPress,
+  reportMode = false,
+  onMapLongPress,
+}: Props) {
   // Serialise only the visible locations into the WebView HTML so we don't
   // ship unused data. The filter runs in JS-land before injection.
   const visible = locations.filter((l) => visibleTypes.has(l.type));
@@ -53,10 +66,81 @@ export default function CampusMap({ locations, visibleTypes, onMarkerPress }: Pr
         .addTo(map)
         .bindPopup(\`${popup.replace(/`/g, '\\`')}\`)
         .on('click', function() {
-          window.ReactNativeWebView.postMessage(JSON.stringify({ id: ${loc.id} }));
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'marker', id: ${loc.id} }));
         });`;
     })
     .join('\n');
+
+  // In report mode, holding a touch still for ~550ms drops a temporary pin
+  // and reports the coordinates back to React Native.
+  //
+  // We deliberately do NOT use Leaflet's built-in 'contextmenu' event here:
+  // on iOS that event is only synthesized by WKWebView as part of its native
+  // long-press-to-select-text gesture — and disabling that gesture (see the
+  // -webkit-user-select / -webkit-touch-callout rules above, needed to stop
+  // the native Copy/Look Up/Translate popup from stealing the long-press)
+  // also silently disables the contextmenu event along with it. So instead
+  // we time the press ourselves directly off touchstart/touchend, which
+  // works regardless of those CSS settings.
+  //
+  // The pin is purely visual — it disappears the moment the WebView reloads
+  // with new `html` (e.g. when the parent flips reportMode back off after the
+  // report sheet closes), so there's nothing to clean up.
+  const reportModeJS = reportMode
+    ? `
+    map.getContainer().style.cursor = 'crosshair';
+    let _reportMarker = null;
+    let _pressTimer = null;
+    const LONG_PRESS_MS = 550;
+
+    function _latLngFromEvent(e) {
+      const touch = e.touches && e.touches.length ? e.touches[0] : e;
+      const point = map.mouseEventToContainerPoint(touch);
+      return map.containerPointToLatLng(point);
+    }
+
+    function _cancelPress() {
+      if (_pressTimer) {
+        clearTimeout(_pressTimer);
+        _pressTimer = null;
+      }
+    }
+
+    function _startPress(e) {
+      if (e.touches && e.touches.length > 1) return; // ignore multi-touch (pinch/zoom)
+      const latlng = _latLngFromEvent(e);
+      _cancelPress();
+      _pressTimer = setTimeout(function() {
+        _pressTimer = null;
+        if (_reportMarker) map.removeLayer(_reportMarker);
+        _reportMarker = L.circleMarker([latlng.lat, latlng.lng], {
+          radius: 11,
+          fillColor: '#854F0B',
+          color: '#fff',
+          weight: 3,
+          opacity: 1,
+          fillOpacity: 0.95,
+        }).addTo(map);
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'report-location',
+          lat: latlng.lat,
+          lng: latlng.lng,
+        }));
+      }, LONG_PRESS_MS);
+    }
+
+    const _mapContainer = map.getContainer();
+    // touchmove/mousemove cancel the timer so a real map drag/pan doesn't
+    // also register as a long-press report.
+    _mapContainer.addEventListener('touchstart', _startPress, { passive: true });
+    _mapContainer.addEventListener('touchend', _cancelPress);
+    _mapContainer.addEventListener('touchcancel', _cancelPress);
+    _mapContainer.addEventListener('touchmove', _cancelPress);
+    _mapContainer.addEventListener('mousedown', _startPress);
+    _mapContainer.addEventListener('mouseup', _cancelPress);
+    _mapContainer.addEventListener('mousemove', _cancelPress);
+    _mapContainer.addEventListener('mouseleave', _cancelPress);`
+    : '';
 
   const html = `
 <!DOCTYPE html>
@@ -70,6 +154,15 @@ export default function CampusMap({ locations, visibleTypes, onMarkerPress }: Pr
     #map { height: 100vh; }
     /* Make attribution smaller so it doesn't overlap controls */
     .leaflet-control-attribution { font-size: 9px !important; }
+    /* iOS (WKWebView) shows a native Copy/Look Up/Translate callout on any
+       long-press by default, which steals the gesture before Leaflet's own
+       long-press ('contextmenu') handler fires. Disabling text-selection and
+       the long-press callout lets our handler receive it instead. */
+    html, body, #map {
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
   </style>
 </head>
 <body>
@@ -83,16 +176,23 @@ export default function CampusMap({ locations, visibleTypes, onMarkerPress }: Pr
     }).addTo(map);
 
     ${markersJS}
+    ${reportModeJS}
   </script>
 </body>
 </html>`;
 
   const handleMessage = (event: { nativeEvent: { data: string } }) => {
-    if (!onMarkerPress) return;
     try {
-      const { id } = JSON.parse(event.nativeEvent.data) as { id: number };
-      const loc = locations.find((l) => l.id === id);
-      if (loc) onMarkerPress(loc);
+      const msg = JSON.parse(event.nativeEvent.data) as
+        | { type: 'marker'; id: number }
+        | { type: 'report-location'; lat: number; lng: number };
+
+      if (msg.type === 'marker' && onMarkerPress) {
+        const loc = locations.find((l) => l.id === msg.id);
+        if (loc) onMarkerPress(loc);
+      } else if (msg.type === 'report-location' && onMapLongPress) {
+        onMapLongPress(msg.lat, msg.lng);
+      }
     } catch (_) {
       // ignore malformed messages
     }
@@ -108,6 +208,9 @@ export default function CampusMap({ locations, visibleTypes, onMarkerPress }: Pr
         mixedContentMode="always"
         javaScriptEnabled
         domStorageEnabled
+        // Prevents iOS's 3D-touch/long-press link-preview from competing
+        // with Leaflet's own long-press (contextmenu) handler
+        allowsLinkPreview={false}
       />
     </View>
   );
