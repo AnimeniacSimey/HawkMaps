@@ -22,7 +22,7 @@ app = FastAPI(title="Hawk Maps API", version="0.1.0")
 # ── CORS (allow React dev server) ─────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://localhost:8081"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,6 +43,11 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
 
 # ── Models ────────────────────────────────────────────────────────────────
 class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class SignupRequest(BaseModel):
+    name: str
     email: str
     password: str
 
@@ -71,15 +76,46 @@ class GooseReport(BaseModel):
     note: Optional[str] = None
 
 # ── Auth Routes ───────────────────────────────────────────────────────────
+LAURIER_DOMAINS = ("@mylaurier.ca", "@wlu.ca")
+
+def is_laurier_email(email: str) -> bool:
+    email = email.strip().lower()
+    return email.endswith(LAURIER_DOMAINS) and email.index("@") > 0
+
+# In-memory user store: email → {name, password}.
+# TODO: move to a real database and hash passwords (passlib/bcrypt).
+# Seeded with a demo account so the team can sign in without registering.
+USERS_DB: dict[str, dict] = {
+    "demo@mylaurier.ca": {"name": "Demo Hawk", "password": "hawkmaps"},
+}
+
+@app.post("/api/auth/signup", status_code=201)
+def signup(req: SignupRequest):
+    """Create an account with a Laurier email, then sign the user in."""
+    email = req.email.strip().lower()
+    if not is_laurier_email(email):
+        raise HTTPException(status_code=400, detail="Use your Laurier email (…@mylaurier.ca)")
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    if email in USERS_DB:
+        raise HTTPException(status_code=409, detail="An account with this email already exists — sign in instead")
+    USERS_DB[email] = {"name": req.name.strip(), "password": req.password}
+    token = create_access_token({"sub": email.split("@")[0]})
+    return {"access_token": token, "token_type": "bearer"}
+
 @app.post("/api/auth/login")
 def login(req: LoginRequest):
     """
     Authenticate with Laurier email + password.
     TODO: Replace stub with Laurier Microsoft Entra SSO (OAuth2 PKCE flow).
     """
-    if not req.email.endswith("@mylaurier.ca") and not req.email.endswith("@wlu.ca"):
-        raise HTTPException(status_code=400, detail="Must use a Laurier email address")
-    token = create_access_token({"sub": req.email.split("@")[0]})
+    email = req.email.strip().lower()
+    if not is_laurier_email(email):
+        raise HTTPException(status_code=400, detail="Use your Laurier email (…@mylaurier.ca)")
+    user = USERS_DB.get(email)
+    if user is None or user["password"] != req.password:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    token = create_access_token({"sub": email.split("@")[0]})
     return {"access_token": token, "token_type": "bearer"}
 
 @app.get("/api/auth/sso")

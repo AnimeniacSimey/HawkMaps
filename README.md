@@ -28,12 +28,17 @@ npx expo start
 
 ```
 src/
-├── app/                    ← Expo Router screens (one file = one tab)
-│   ├── _layout.tsx         ← Tab navigator — ADD NEW TABS HERE
-│   ├── index.tsx           ← 📍 Map tab (home)
-│   ├── events.tsx          ← 📅 Events tab
-│   ├── study.tsx           ← 📚 Study spaces tab
-│   └── ai.tsx              ← 🐥 GoldenHawk AI tab
+├── app/                    ← Expo Router screens
+│   ├── _layout.tsx         ← Root layout — auth guards (signed in vs out)
+│   ├── welcome.tsx         ← 🦅 Landing screen (logo → arrow → sign in)
+│   ├── login.tsx           ← 🔑 Sign in (Laurier email required)
+│   ├── signup.tsx          ← ✍️ Create account
+│   └── (tabs)/             ← Main app — only reachable when signed in
+│       ├── _layout.tsx     ← Tab navigator — ADD NEW TABS HERE
+│       ├── index.tsx       ← 📍 Map tab (home)
+│       ├── events.tsx      ← 📅 Events tab
+│       ├── study.tsx       ← 📚 Study spaces tab
+│       └── ai.tsx          ← 🐥 GoldenHawk AI tab
 │
 ├── components/
 │   ├── map/                ← Map-specific components
@@ -46,6 +51,9 @@ src/
 │
 ├── constants/
 │   └── theme.ts            ← BRAND colours, STATUS_COLORS, Spacing
+│
+├── hooks/
+│   └── use-auth.tsx        ← 🔑 Auth context (signIn / signUp / signOut)
 │
 └── data/
     └── locations.ts        ← ⭐ ALL map pin data lives here
@@ -138,6 +146,22 @@ EXPO_PUBLIC_API_BASE=http://192.168.1.42:8000   # your machine's LAN IP
 
 > Use your LAN IP, not `localhost` — physical devices can't reach localhost on your computer.
 
+### Sign in / Create account 🔑
+
+The app opens on a welcome screen → sign in → the Map home tab. Accounts
+require a Laurier email (`@mylaurier.ca` or `@wlu.ca`); anything else is
+rejected on both the frontend and the backend.
+
+- **With the backend running** — create an account on the signup screen, or
+  use the seeded demo account: `demo@mylaurier.ca` / `hawkmaps`.
+- **Without a backend** (no `EXPO_PUBLIC_API_BASE` set) — auth runs in local
+  demo mode: any Laurier email signs in, so the app still works in Expo Go.
+
+Auth state lives in [`src/hooks/use-auth.tsx`](src/hooks/use-auth.tsx); the
+route guards live in [`src/app/_layout.tsx`](src/app/_layout.tsx)
+(Expo Router `Stack.Protected`). Passwords are stored in-memory and unhashed —
+demo only. TODO: real database + hashing, then Laurier Microsoft Entra SSO.
+
 ### GoldenHawk AI 🐥
 
 The GoldenHawk chat tab talks to a real LLM. It supports two providers — add
@@ -163,6 +187,7 @@ every request — see [`backend/goldenhawk.py`](backend/goldenhawk.py).
 
 | Method | Path | Description |
 |--------|------|-------------|
+| POST | `/api/auth/signup` | Create account (Laurier email required) |
 | POST | `/api/auth/login` | Email + password login |
 | GET  | `/api/auth/sso`   | Microsoft SSO redirect |
 | GET  | `/api/auth/me`    | Current user (auth required) |
