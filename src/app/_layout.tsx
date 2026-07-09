@@ -1,100 +1,46 @@
 /**
  * HawkMaps · src/app/_layout.tsx
  *
- * Root tab navigator (Expo Router file-based routing).
+ * Root layout — wraps the app in AuthProvider and gates routes:
  *
- * ─────────────────────────────────────────────────────────────────────────
- * HOW TO ADD A NEW TAB
- * ─────────────────────────────────────────────────────────────────────────
- * 1. Create  src/app/your-screen.tsx  (export a default React component).
- * 2. Add a <Tabs.Screen> entry in the <Tabs> navigator below.
- *    Copy any existing entry and change name / title / tabBarIcon.
- * 3. Done — Expo Router picks up the new file automatically.
- * ─────────────────────────────────────────────────────────────────────────
+ *   signed OUT →  welcome → login / signup
+ *   signed IN  →  (tabs)  — Map · Events · Study · GoldenHawk
+ *
+ * Uses Expo Router's Stack.Protected guards (SDK 53+): when `session`
+ * changes, the router automatically switches between the two groups —
+ * no manual redirects needed. Signing in lands on (tabs)/index (the Map).
  */
 
-import { Tabs } from 'expo-router';
-import { Platform, Text } from 'react-native';
+import { Stack } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { BRAND } from '@/constants/theme';
+import { AuthProvider, useAuth } from '@/hooks/use-auth';
 
-// Simple emoji icon helper so we don't need image assets for every tab.
-function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
+function RootNavigator() {
+  const { session } = useAuth();
+
   return (
-    <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.5 }}>{emoji}</Text>
+    <Stack screenOptions={{ headerShown: false }}>
+      {/* ── Signed in: the main tab app ─────────────────────────────── */}
+      <Stack.Protected guard={!!session}>
+        <Stack.Screen name="(tabs)" />
+      </Stack.Protected>
+
+      {/* ── Signed out: welcome → login / signup ────────────────────── */}
+      <Stack.Protected guard={!session}>
+        <Stack.Screen name="welcome" />
+        <Stack.Screen name="login" />
+        <Stack.Screen name="signup" />
+      </Stack.Protected>
+    </Stack>
   );
 }
 
-export default function AppLayout() {
+export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <Tabs
-        screenOptions={{
-          headerShown:        false,
-          tabBarActiveTintColor:   BRAND.purple,
-          tabBarInactiveTintColor: '#9ca3af',
-          tabBarStyle: {
-            backgroundColor: '#fff',
-            borderTopWidth:   0.5,
-            borderTopColor:   'rgba(0,0,0,0.12)',
-            // Extra bottom padding on Android for gesture bar
-            paddingBottom:    Platform.OS === 'android' ? 8 : 0,
-            height:           Platform.OS === 'android' ? 64 : 49,
-          },
-          tabBarLabelStyle: {
-            fontSize:   10,
-            fontWeight: '600',
-            marginTop:  -2,
-          },
-        }}
-      >
-        {/* ── MAP (home tab) ───────────────────────────────────────────── */}
-        <Tabs.Screen
-          name="index"
-          options={{
-            title: 'Map',
-            tabBarIcon: ({ focused }) => <TabIcon emoji="📍" focused={focused} />,
-          }}
-        />
-
-        {/* ── EVENTS ──────────────────────────────────────────────────── */}
-        <Tabs.Screen
-          name="events"
-          options={{
-            title: 'Events',
-            tabBarIcon: ({ focused }) => <TabIcon emoji="📅" focused={focused} />,
-          }}
-        />
-
-        {/* ── STUDY SPACES ────────────────────────────────────────────── */}
-        <Tabs.Screen
-          name="study"
-          options={{
-            title: 'Study',
-            tabBarIcon: ({ focused }) => <TabIcon emoji="📚" focused={focused} />,
-          }}
-        />
-
-        {/* ── GOLDENHAWK AI ────────────────────────────────────────────── */}
-        <Tabs.Screen
-          name="ai"
-          options={{
-            title: 'GoldenHawk',
-            tabBarIcon: ({ focused }) => <TabIcon emoji="🐥" focused={focused} />,
-          }}
-        />
-
-        {/*
-         * ── ADD YOUR TAB HERE ─────────────────────────────────────────
-         * <Tabs.Screen
-         *   name="your-screen"
-         *   options={{
-         *     title: 'Label',
-         *     tabBarIcon: ({ focused }) => <TabIcon emoji="🎯" focused={focused} />,
-         *   }}
-         * />
-         */}
-      </Tabs>
+      <AuthProvider>
+        <RootNavigator />
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }
