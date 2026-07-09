@@ -5,17 +5,18 @@
  * To add events, edit the EVENTS array below (or swap in an API call).
  */
 
+import { BRAND } from '@/constants/theme';
 import { useState } from 'react';
 import {
   FlatList,
+  Linking,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-} from 'react-native';
+} from "react-native";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BRAND } from '@/constants/theme';
 
 // ── Data ────────────────────────────────────────────────────────────────
 type Event = {
@@ -33,7 +34,7 @@ const EVENTS: Event[] = [
   { id:2, emoji:'🎵', title:'Open Mic Night',       date:'Nov 9',  location:'Turret Lounge',   tags:['Social','Free'],  bg:'#78440a' },
   { id:3, emoji:'🌿', title:'Eco Club Fair',         date:'Nov 10', location:'Concourse',       tags:['Environment'],    bg:'#085041' },
   { id:4, emoji:'🏆', title:'Intramural Finals',     date:'Nov 11', location:'AC Gym',          tags:['Sports'],         bg:'#0c447c' },
-  { id:5, emoji:'👔', title:'Career Fair 2024',      date:'Nov 15', location:'Athletic Complex',tags:['Career','Free'],  bg:'#1a1a2e' },
+  { id:5, emoji:'👔', title:'Career Fair 2026',      date:'Nov 15', location:'Athletic Complex',tags:['Career','Free'],  bg:'#1a1a2e' },
   { id:6, emoji:'🎨', title:'Art & Design Expo',     date:'Nov 20', location:'SC Building',     tags:['Arts'],           bg:'#3d0d6b' },
 ];
 
@@ -86,7 +87,49 @@ export default function EventsScreen() {
     </View>
   );
 }
+function addToGoogleCalendar(event: Event) {
+  const year = new Date().getFullYear();
 
+  const months: Record<string, number> = {
+    Jan: 0,
+    Feb: 1,
+    Mar: 2,
+    Apr: 3,
+    May: 4,
+    Jun: 5,
+    Jul: 6,
+    Aug: 7,
+    Sep: 8,
+    Oct: 9,
+    Nov: 10,
+    Dec: 11,
+  };
+
+  const [monthName, day] = event.date.split(" ");
+
+  const start = new Date(
+    year,
+    months[monthName],
+    parseInt(day),
+    12,
+    0,
+    0
+  );
+
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+
+  const formatDate = (date: Date) =>
+    date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  console.log(start);
+console.log(start.getTime());
+  const url =
+    `https://calendar.google.com/calendar/render?action=TEMPLATE` +
+    `&text=${encodeURIComponent(event.title)}` +
+    `&dates=${formatDate(start)}/${formatDate(end)}` +
+    `&location=${encodeURIComponent(event.location)}`;
+
+  Linking.openURL(url);
+}
 function EventCard({ event }: { event: Event }) {
   return (
     <View style={styles.card}>
@@ -104,7 +147,10 @@ function EventCard({ event }: { event: Event }) {
           ))}
         </View>
       </View>
-      <TouchableOpacity style={styles.addBtn}>
+      <TouchableOpacity
+      style={styles.addBtn}
+      onPress={() => addToGoogleCalendar(event)}
+      >
         <Text style={styles.addBtnText}>+ Add</Text>
       </TouchableOpacity>
     </View>

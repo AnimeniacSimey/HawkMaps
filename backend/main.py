@@ -17,6 +17,7 @@ import os
 
 import goldenhawk
 
+
 app = FastAPI(title="Hawk Maps API", version="0.1.0")
 
 # ── CORS (allow React dev server) ─────────────────────────────────────────
