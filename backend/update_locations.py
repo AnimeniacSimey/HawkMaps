@@ -16,7 +16,7 @@ General App Usage:
         - update the TypeScript file with the locations
 
 Testing through this script:
-    - Update lines 21 and 24 in this script to match the names of the input and output files if they are different.
+    - Update lines 26 and 29 in this script to match the names of the input and output files if they are different.
     - Run this script directly to test the functionality of the 'updateLocations' function and ensure that the TypeScript file is updated correctly with the new locations.
 '''
 
