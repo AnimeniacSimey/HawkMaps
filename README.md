@@ -153,9 +153,33 @@ require a Laurier email (`@mylaurier.ca` or `@wlu.ca`); anything else is
 rejected on both the frontend and the backend.
 
 - **With the backend running** — create an account on the signup screen, or
-  use the seeded demo account: `demo@mylaurier.ca` / `hawkmaps`.
+  use the seeded demo accounts:
+  | Email | Password | Role |
+  |-------|----------|------|
+  | `demo@mylaurier.ca` | `hawkmaps` | student |
+  | `exec@mylaurier.ca` | `hawkmaps` | club exec (CS Club) |
 - **Without a backend** (no `EXPO_PUBLIC_API_BASE` set) — auth runs in local
   demo mode: any Laurier email signs in, so the app still works in Expo Go.
+  Emails containing `exec` (e.g. `myexec@mylaurier.ca`) sign in as a CS Club
+  exec so the exec-only UI is testable offline.
+
+### Account designations 🎓
+
+There are two account designations:
+
+1. **Regular user (student)** — everyone who signs up. Browses the map,
+   events, study spaces, and GoldenHawk.
+2. **Club executive** — everything a student can do, **plus** a `+ Create`
+   button on the Events page that posts events for **their own club only**
+   (the backend forces the event's club to the exec's club).
+
+To become a club exec you apply through the Google Form linked top-left on
+the Events page ("📝 Become a club exec"). The form URL is still TBD — paste
+it into `CLUB_EXEC_FORM_URL` in
+[`src/app/(tabs)/events.tsx`](<src/app/(tabs)/events.tsx>) when the club
+creates it; until then the button shows a "coming soon" notice. Exec status
+is then granted manually (set `role`/`club` on the user in
+[`backend/main.py`](backend/main.py) — no self-serve upgrade).
 
 Auth state lives in [`src/hooks/use-auth.tsx`](src/hooks/use-auth.tsx); the
 route guards live in [`src/app/_layout.tsx`](src/app/_layout.tsx)
@@ -192,7 +216,7 @@ every request — see [`backend/goldenhawk.py`](backend/goldenhawk.py).
 | GET  | `/api/auth/sso`   | Microsoft SSO redirect |
 | GET  | `/api/auth/me`    | Current user (auth required) |
 | GET  | `/api/events`     | List events (optional `?search=`, `?tag=`) |
-| POST | `/api/events`     | Create event (auth required) |
+| POST | `/api/events`     | Create event (club execs only — always for their own club) |
 | GET  | `/api/events/{id}` | Single event by id |
 | GET  | `/api/spaces`     | Study space availability |
 | GET  | `/api/buildings`  | Campus buildings list |

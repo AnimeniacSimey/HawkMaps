@@ -111,7 +111,13 @@ export default function LoginScreen() {
 
           {/* Links */}
           <TouchableOpacity
-            onPress={() => Alert.alert('Reset password', 'Password reset is coming soon. Contact Laurier ICT if you are locked out.')}
+            onPress={() => {
+              const title = 'Reset password';
+              const msg   = 'Password reset is coming soon. Contact Laurier ICT if you are locked out.';
+              // Alert.alert is a no-op on react-native-web, so fall back there.
+              if (Platform.OS === 'web') window.alert(`${title}\n\n${msg}`);
+              else Alert.alert(title, msg);
+            }}
           >
             <Text style={styles.link}>Forget password?</Text>
           </TouchableOpacity>

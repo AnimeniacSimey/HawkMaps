@@ -40,7 +40,12 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     """Validate JWT. Replace with real jose.jwt.decode in production."""
     if not token.startswith("demo_token_"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    return {"username": token.replace("demo_token_", ""), "email": f"{token}@mylaurier.ca"}
+    username = token.replace("demo_token_", "")
+    # Resolve the account so role/club survive into authed routes.
+    for email, u in USERS_DB.items():
+        if email.split("@")[0] == username:
+            return {"username": username, "email": email, "role": u.get("role", "student"), "club": u.get("club")}
+    return {"username": username, "email": f"{username}@mylaurier.ca", "role": "student", "club": None}
 
 # ── Models ────────────────────────────────────────────────────────────────
 class LoginRequest(BaseModel):
@@ -83,11 +88,19 @@ def is_laurier_email(email: str) -> bool:
     email = email.strip().lower()
     return email.endswith(LAURIER_DOMAINS) and email.index("@") > 0
 
-# In-memory user store: email → {name, password}.
+# In-memory user store: email → {name, password, role, club}.
 # TODO: move to a real database and hash passwords (passlib/bcrypt).
-# Seeded with a demo account so the team can sign in without registering.
+#
+# Account designations:
+#   "student"   — regular user (everyone who signs up)
+#   "club_exec" — can create events for their own club (and only that club).
+#                 Granted manually after applying through the Google Form
+#                 linked on the Events page — there is no self-serve upgrade.
+#
+# Seeded with demo accounts so the team can sign in without registering.
 USERS_DB: dict[str, dict] = {
-    "demo@mylaurier.ca": {"name": "Demo Hawk", "password": "hawkmaps"},
+    "demo@mylaurier.ca": {"name": "Demo Hawk", "password": "hawkmaps", "role": "student",   "club": None},
+    "exec@mylaurier.ca": {"name": "Casey Exec", "password": "hawkmaps", "role": "club_exec", "club": "CS Club"},
 }
 
 @app.post("/api/auth/signup", status_code=201)
@@ -100,9 +113,11 @@ def signup(req: SignupRequest):
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
     if email in USERS_DB:
         raise HTTPException(status_code=409, detail="An account with this email already exists — sign in instead")
-    USERS_DB[email] = {"name": req.name.strip(), "password": req.password}
+    # Everyone signs up as a regular student. Club-exec status is granted
+    # manually after applying via the Google Form on the Events page.
+    USERS_DB[email] = {"name": req.name.strip(), "password": req.password, "role": "student", "club": None}
     token = create_access_token({"sub": email.split("@")[0]})
-    return {"access_token": token, "token_type": "bearer"}
+    return {"access_token": token, "token_type": "bearer", "role": "student", "club": None}
 
 @app.post("/api/auth/login")
 def login(req: LoginRequest):
@@ -117,7 +132,8 @@ def login(req: LoginRequest):
     if user is None or user["password"] != req.password:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     token = create_access_token({"sub": email.split("@")[0]})
-    return {"access_token": token, "token_type": "bearer"}
+    return {"access_token": token, "token_type": "bearer",
+            "role": user.get("role", "student"), "club": user.get("club")}
 
 @app.get("/api/auth/sso")
 def sso_redirect():
@@ -127,7 +143,8 @@ def sso_redirect():
 
 @app.get("/api/auth/me")
 def get_me(user=Depends(get_current_user)):
-    return {"username": user["username"], "email": user["email"]}
+    return {"username": user["username"], "email": user["email"],
+            "role": user["role"], "club": user["club"]}
 
 # ── Events Routes ─────────────────────────────────────────────────────────
 EVENTS_DB: list[dict] = [
@@ -149,8 +166,31 @@ def list_events(search: Optional[str] = None, tag: Optional[str] = None):
 
 @app.post("/api/events", status_code=201)
 def create_event(ev: EventCreate, user=Depends(get_current_user)):
-    """Club executives can POST new events."""
-    new_ev = {"id": len(EVENTS_DB) + 1, **ev.dict(), "created_by": user["username"], "created_at": datetime.utcnow().isoformat()}
+    """Club executives can POST new events — always for their OWN club.
+
+    Regular students get a 403 pointing them at the exec application form.
+    The event's club comes from the exec's account, never from the request,
+    so an exec can't post on another club's behalf.
+    """
+    if user["role"] != "club_exec":
+        raise HTTPException(
+            status_code=403,
+            detail="Only club executives can create events — apply via the form on the Events page",
+        )
+    data = ev.dict()
+    data["club"] = user["club"]  # force the exec's own club
+    new_ev = {
+        "id": len(EVENTS_DB) + 1,
+        "title":       data["title"],
+        "description": data["description"],
+        "location":    data["location"],
+        "start":       data["start_time"],
+        "end":         data["end_time"],
+        "club":        data["club"],
+        "tags":        ["Club"],
+        "created_by":  user["username"],
+        "created_at":  datetime.utcnow().isoformat(),
+    }
     EVENTS_DB.append(new_ev)
     return new_ev
 

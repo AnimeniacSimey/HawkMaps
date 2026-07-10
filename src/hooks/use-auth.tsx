@@ -14,12 +14,7 @@
  */
 
 import { createContext, useContext, useState, type ReactNode } from 'react';
-
-// ── API config ─────────────────────────────────────────────────────────
-// Same convention as the GoldenHawk tab — set in a project-root `.env`:
-//   EXPO_PUBLIC_API_BASE=http://192.168.1.42:8000
-// If unset, auth runs in local demo mode (any Laurier email signs in).
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE ?? '';
+import { API_BASE } from '@/constants/api';
 
 // Laurier email domains accepted by HawkMaps.
 const LAURIER_DOMAINS = ['@mylaurier.ca', '@wlu.ca'];
@@ -30,10 +25,17 @@ export function isLaurierEmail(email: string): boolean {
 }
 
 // ── Types ───────────────────────────────────────────────────────────────
+// Account designations: every signup is a "student"; "club_exec" is granted
+// manually after applying via the Google Form linked on the Events page.
+// Club execs can additionally create events for their own club (only).
+export type UserRole = 'student' | 'club_exec';
+
 export type Session = {
   token:    string;
   email:    string;
   username: string;
+  role:     UserRole;
+  club:     string | null;   // the exec's club — null for students
 };
 
 type AuthContextValue = {
@@ -46,9 +48,22 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 // ── Helpers ─────────────────────────────────────────────────────────────
-function sessionFromEmail(email: string, token: string): Session {
+function sessionFromEmail(
+  email: string,
+  token: string,
+  role: UserRole = 'student',
+  club: string | null = null,
+): Session {
   const clean = email.trim().toLowerCase();
-  return { token, email: clean, username: clean.split('@')[0] };
+  return { token, email: clean, username: clean.split('@')[0], role, club };
+}
+
+/** Demo-mode role: emails whose local part contains "exec" sign in as a
+ *  CS Club executive so the exec-only UI is testable without a backend. */
+function demoRole(email: string): { role: UserRole; club: string | null } {
+  return email.trim().toLowerCase().split('@')[0].includes('exec')
+    ? { role: 'club_exec', club: 'CS Club' }
+    : { role: 'student', club: null };
 }
 
 /** POST to the backend and return the parsed body, throwing FastAPI's
@@ -78,12 +93,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!API_BASE) {
       // Demo mode — no backend configured, accept any Laurier email.
-      setSession(sessionFromEmail(email, 'demo_token_local'));
+      const { role, club } = demoRole(email);
+      setSession(sessionFromEmail(email, 'demo_token_local', role, club));
       return;
     }
 
     const data = await postJson('/api/auth/login', { email: email.trim().toLowerCase(), password });
-    setSession(sessionFromEmail(email, data.access_token));
+    setSession(sessionFromEmail(email, data.access_token, data.role, data.club));
   };
 
   const signUp = async (name: string, email: string, password: string) => {
@@ -96,7 +112,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!API_BASE) {
       // Demo mode — no backend configured, accept any Laurier email.
-      setSession(sessionFromEmail(email, 'demo_token_local'));
+      const { role, club } = demoRole(email);
+      setSession(sessionFromEmail(email, 'demo_token_local', role, club));
       return;
     }
 
@@ -105,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email:    email.trim().toLowerCase(),
       password,
     });
-    setSession(sessionFromEmail(email, data.access_token));
+    setSession(sessionFromEmail(email, data.access_token, data.role, data.club));
   };
 
   const signOut = () => setSession(null);
