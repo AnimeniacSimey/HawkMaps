@@ -12,3 +12,6 @@ dist/
 
 expo-env.d.ts
 # @end expo-cli
+# Python backend virtualenv
+backend/venv/
+__pycache__/

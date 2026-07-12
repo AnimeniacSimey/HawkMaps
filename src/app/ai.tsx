@@ -110,17 +110,34 @@ export default function AIScreen() {
     API_BASE ? 'checking' : 'offline',
   );
 
-  // Ping the backend once on load so the header can show Live vs Offline.
+  // Poll the backend so the header reflects Live vs Offline and self-heals.
+  // Tolerates a single transient failure (Wi-Fi blip) before showing offline.
   useEffect(() => {
     if (!API_BASE) return;
     let alive = true;
-    fetch(`${API_BASE}/api/health`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('down'))))
-      .then((d: { goldenhawk_ai?: string }) => {
-        if (alive) setStatus(d.goldenhawk_ai === 'connected' ? 'live' : 'offline');
-      })
-      .catch(() => alive && setStatus('offline'));
-    return () => { alive = false; };
+    let fails = 0;
+
+    const check = async () => {
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 5000);
+        const res = await fetch(`${API_BASE}/api/health`, { signal: ctrl.signal });
+        clearTimeout(timer);
+        if (!res.ok) throw new Error(`health ${res.status}`);
+        const data = (await res.json()) as { goldenhawk_ai?: string };
+        if (!alive) return;
+        fails = 0;
+        setStatus(data.goldenhawk_ai === 'connected' ? 'live' : 'offline');
+      } catch {
+        if (!alive) return;
+        fails += 1;
+        if (fails >= 2) setStatus('offline'); // don't flip on a single blip
+      }
+    };
+
+    check();
+    const id = setInterval(check, 15000);
+    return () => { alive = false; clearInterval(id); };
   }, []);
 
   const scrollToEnd = () => listRef.current?.scrollToEnd({ animated: true });

@@ -192,29 +192,21 @@ function describeRoute(from: Resolved, to: Resolved): string {
   const path = shortestPath(a.id, b.id);
   let body: string;
 
-  if (path) {
-    // Building names along the path, for a readable description.
-    const names: string[] = [a.name];
-    for (const step of path.steps) names.push(byId(step.to).name);
-    const midIds = path.steps.slice(0, -1).map((s) => s.to);
-    const viaConcourse = midIds.length > 0 && midIds.every((id) => id === 'fncc');
-
-    if (path.steps.length === 1) {
-      const s = path.steps[0];
-      body =
-        `From ${a.name}, take the ${s.kind} to ${b.name} — about ${path.total} min.` +
-        (s.covered ? ' Stays indoors, so you keep dry 🗺️' : ' 🗺️');
-    } else if (viaConcourse) {
-      body = `From ${a.name}, cut through the Concourse to ${b.name} — about ${path.total} min, all indoors so you keep dry 🗺️`;
-    } else {
-      // Multi-hop: one clean sentence naming the buildings you pass through.
-      const via = names.slice(1, -1).join(' → ');
-      body = `${a.name} → ${b.name} is about ${path.total} min, all indoors through the connected academic complex (via the Concourse). You'll pass ${via}, so you keep dry 🗺️`;
-    }
+  if (path && path.steps.length === 1) {
+    // Directly adjacent — give the specific connection.
+    const s = path.steps[0];
+    body =
+      `From ${a.name}, take the ${s.kind} to ${b.name} — about ${s.minutes} min.` +
+      (s.covered ? ' Stays indoors, so you keep dry 🗺️' : ' 🗺️');
+  } else if (path) {
+    // Both in the connected academic complex. The buildings interconnect, so
+    // estimate from actual distance (not the winding graph) and keep it clean.
+    const mins = Math.max(2, Math.round(walkMinutes(a, b) * 1.2)); // indoor halls aren't straight lines
+    body = `${a.name} and ${b.name} are both in the connected academic complex — about ${mins} min indoors via the Concourse, so you stay dry 🗺️`;
   } else {
-    // Coords are approximate, so floor the estimate and keep it soft.
+    // No indoor connection → outdoor walk (coords are exact, so floor gently).
     const mins = Math.max(3, walkMinutes(a, b));
-    body = `${a.name} and ${b.name} aren't on the same indoor route — it's roughly a ${mins}-min walk outdoors 🚶`;
+    body = `${a.name} and ${b.name} aren't indoor-connected — it's about a ${mins}-min walk outdoors 🚶`;
   }
 
   // Warn about any closures on either endpoint.
@@ -225,15 +217,26 @@ function describeRoute(from: Resolved, to: Resolved): string {
   return [body + roomNote(to.room), ...warnings].join('\n');
 }
 
-// ── Intent: parse "from X to Y" / "between X and Y" / "X to Y" ─────────────
-function parseEndpoints(text: string): [string, string] | null {
-  let m = text.match(/\bbetween\s+(.+?)\s+and\s+(.+)/i);
-  if (m) return [m[1], m[2]];
-  m = text.match(/\bfrom\s+(.+?)\s+to\s+(.+)/i);
-  if (m) return [m[1], m[2]];
-  m = text.match(/(.+?)\s+to\s+(.+)/i);
-  if (m) return [m[1], m[2]];
-  return null;
+// ── Intent: pull an origin and destination out of the message ─────────────
+// Handles "from A to B", "to B from A", "A to B", "between A and B", and a
+// lone "from A" or "to B". Either side may be null.
+function parseRoute(text: string): { origin: string | null; dest: string | null } {
+  const between = text.match(/\bbetween\s+(.+?)\s+and\s+(.+)/i);
+  if (between) return { origin: between[1].trim(), dest: between[2].trim() };
+
+  // "from <origin>" up to a following "to"/end; "to <dest>" up to a following "from"/end.
+  const fromM = text.match(/\bfrom\s+(.+?)(?=\s+\bto\b|[?.!]|$)/i);
+  const toM = text.match(/\bto\s+(.+?)(?=\s+\bfrom\b|[?.!]|$)/i);
+  let origin = fromM ? fromM[1].trim() : null;
+  const dest = toM ? toM[1].trim() : null;
+
+  // "A to B" with no explicit "from": the text before "to" may be the origin.
+  if (!origin && dest) {
+    const idx = text.toLowerCase().search(/\bto\b/);
+    const before = idx > 0 ? text.slice(0, idx).trim() : '';
+    if (before && resolveLocation(before)) origin = before;
+  }
+  return { origin, dest };
 }
 
 // ── Non-route intents ─────────────────────────────────────────────────────
@@ -337,7 +340,7 @@ function routeFromDefault(dest: Resolved, now: number): string {
   }
   const origin = BUILDINGS.find((b) => b.id === CONCOURSE_ID);
   if (!origin) return answerInfo(dest, now);
-  return `Assuming you're starting near the Concourse (central campus) — say so if you're elsewhere:\n${describeRoute({ building: origin }, dest)}`;
+  return `From the Concourse (central campus) — tell me if you're starting elsewhere:\n${describeRoute({ building: origin }, dest)}`;
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────
@@ -346,25 +349,30 @@ export function answerLocally(message: string): string {
   const lower = text.toLowerCase();
   const now = nowMinutes();
 
-  // Route intent: two resolvable endpoints, or clear routing language.
-  const endpoints = parseEndpoints(text);
+  // Route intent: pull origin/destination from the message.
+  const route = parseRoute(text);
   const routeWords = /\b(route|directions?|navigate|shortest|fastest|how (do|can) i get|way to|get to|walk to)\b/i.test(text);
+  const from = route.origin ? resolveLocation(route.origin) : null;
+  const to = route.dest ? resolveLocation(route.dest) : null;
 
-  if (endpoints || routeWords) {
-    const from = endpoints ? resolveLocation(endpoints[0]) : null;
-    const to = endpoints ? resolveLocation(endpoints[1]) : null;
-    if (from && to) return describeRoute(from, to);
+  if (from && to) return describeRoute(from, to);
 
-    // Only claim this as a route question if there's routing language or a real
-    // place resolved — otherwise a phrase like "a place TO study" falls through
-    // to the study/events/etc. intents below.
-    if (routeWords || from || to) {
-      if (to && !from) return routeFromDefault(to, now);       // "how do I get to BA 202"
-      if (from && !to) return `I know ${from.building.name}, but I couldn't place your destination. Try a building name or room code like "BA 202" or "N1001" 🗺️`;
-      const dest = resolveLocation(text);                       // "get me to DAWB" (no split)
-      if (dest) return routeFromDefault(dest, now);
-      if (routeWords) return `Where do you want to go? Give me a building or room — e.g. "how do I get to BA 202" 🗺️`;
-    }
+  // Real origin given, destination not found (or missing).
+  if (from && !to) {
+    if (route.dest) return `I know ${from.building.name}, but I couldn't place "${route.dest}" — try a building name or room code like "BA 202" or "N1001" 🗺️`;
+    return `Where do you want to go from ${from.building.name}? Give me a building or room and I'll route you 🗺️`;
+  }
+  // Destination found, no resolvable origin → route from the Concourse default,
+  // but if the student named a start we couldn't place, say so honestly.
+  if (to && !from) {
+    if (route.origin) return `I can get you to ${to.building.name}, but I couldn't place "${route.origin}" as a starting point — try a building name or code 🗺️`;
+    return routeFromDefault(to, now);
+  }
+  // Nothing resolved yet, but the phrasing is clearly about routing.
+  if (routeWords) {
+    const dest = resolveLocation(text);
+    if (dest) return routeFromDefault(dest, now);
+    return `Where do you want to go? Give me a building or room — e.g. "how do I get to BA 202" 🗺️`;
   }
 
   if (/\b(hours?|open|close[ds]?|when.*(open|close))\b/.test(lower)) return answerHours(text, now);

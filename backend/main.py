@@ -28,8 +28,8 @@ app = FastAPI(title="Hawk Maps API", version="0.1.0")
 # ── CORS (allow React dev server) ─────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
-    allow_credentials=True,
+    allow_origins=["*"],          # dev/testing: allow the LAN web build + Expo Go
+    allow_credentials=False,      # no cookies are used, so "*" origins is fine
     allow_methods=["*"],
     allow_headers=["*"],
 )
