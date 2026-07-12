@@ -15,6 +15,12 @@ from typing import Optional
 from datetime import datetime, timedelta
 import os
 
+try:
+    from zoneinfo import ZoneInfo
+    CAMPUS_TZ = ZoneInfo("America/Toronto")  # Waterloo campus timezone
+except Exception:  # pragma: no cover - tzdata missing; fall back to server local time
+    CAMPUS_TZ = None
+
 import goldenhawk
 
 app = FastAPI(title="Hawk Maps API", version="0.1.0")
@@ -138,6 +144,28 @@ def fill_to_status(pct: int) -> str:
     if pct < 90: return "busy"
     return "full"
 
+def _to_minutes(hhmm: str) -> Optional[int]:
+    """'08:30' -> 510. Returns None if unparseable."""
+    try:
+        h, m = hhmm.split(":")
+        return int(h) * 60 + int(m)
+    except (ValueError, AttributeError):
+        return None
+
+def is_open_now(open_str: str, close_str: str, now_minutes: int) -> Optional[bool]:
+    """Whether a place is open at now_minutes (minutes past midnight).
+
+    Handles overnight hours where close is past midnight (e.g. open 08:00,
+    close 00:00 means open until midnight; open 20:00 close 02:00 crosses over).
+    Returns None if the hours can't be parsed.
+    """
+    o, c = _to_minutes(open_str), _to_minutes(close_str)
+    if o is None or c is None or o == c:
+        return None
+    if c > o:                       # same-day hours
+        return o <= now_minutes < c
+    return now_minutes >= o or now_minutes < c  # crosses midnight
+
 @app.get("/api/spaces")
 def list_spaces(type: Optional[str] = None):
     spaces = [{"status": fill_to_status(s["fill_pct"]), **s} for s in SPACES_DB]
@@ -146,23 +174,42 @@ def list_spaces(type: Optional[str] = None):
     return spaces
 
 # ── Campus Map / Buildings ────────────────────────────────────────────────
+# Wilfrid Laurier University — Waterloo campus. Names, codes and COORDINATES from
+# Laurier's official Concept3D campus map (map.concept3d.com id=638); hours from
+# wlu.ca's building-hours schedule (verified July 2026). The full 65-building set
+# and indoor-route graph live in the app at src/data/campus.ts; this is the core
+# subset the LLM reasons over. "connected" marks the indoor Concourse-linked core.
+_ACC = "Accessible entrance available — see Laurier's accessibility map"
 BUILDINGS_DB = [
-    {"id":1, "name":"Science Building",    "lat":43.4728,"lng":-80.5271, "accessible_entrance":"West entrance, ramp on University Ave"},
-    {"id":2, "name":"BA Building",         "lat":43.4734,"lng":-80.5262, "accessible_entrance":"Main entrance, automatic doors"},
-    {"id":3, "name":"Peters Library",      "lat":43.4740,"lng":-80.5248, "accessible_entrance":"East entrance off Bricker Ave"},
-    {"id":4, "name":"Dining Hall",         "lat":43.4724,"lng":-80.5274, "accessible_entrance":"South entrance, ramp on Ezra Ave"},
-    {"id":5, "name":"Lazaridis Hall",      "lat":43.4731,"lng":-80.5258, "accessible_entrance":"King St entrance, automatic doors"},
-    {"id":6, "name":"Athletic Complex",    "lat":43.4736,"lng":-80.5244, "accessible_entrance":"North entrance off University Ave"},
+    {"id":1,  "name":"Science Building",                "code":"N",    "street":"75 University Ave W", "connected":True,  "lat":43.47355,"lng":-80.5248,  "contains":"Faculty of Science labs and lecture halls; atrium study space", "accessible_entrance":_ACC},
+    {"id":2,  "name":"Bricker Academic Building",       "code":"BA",   "street":"75 University Ave W", "connected":True,  "lat":43.47282,"lng":-80.52648, "contains":"Laurier's largest lecture halls (450 + two 200 seat) and Media Technology Services; connects directly to the Science Building", "accessible_entrance":_ACC},
+    {"id":3,  "name":"Frank C. Peters Building",        "code":"P",    "street":"75 University Ave W", "connected":True,  "lat":43.47364,"lng":-80.5306,  "contains":"classrooms and study rooms; connected to the Library", "accessible_entrance":_ACC},
+    {"id":4,  "name":"Dining Hall (Paul Martin Centre)","code":"DH",   "street":"75 University Ave W", "connected":True,  "lat":43.47437,"lng":-80.52872, "contains":"the Fresh Food Company dining hall", "accessible_entrance":_ACC},
+    {"id":5,  "name":"Lazaridis Hall",                  "code":"LH",   "street":"64 University Ave W (across University Ave)", "connected":False, "lat":43.47506,"lng":-80.52949, "contains":"the Lazaridis School of Business & Economics; large lecture halls and atrium study", "accessible_entrance":_ACC},
+    {"id":6,  "name":"Athletic Complex",               "code":"AC",   "street":"Seagram Dr / University Stadium", "connected":False, "lat":43.47526,"lng":-80.5255,  "contains":"gym, pool, fitness centre and varsity athletics", "accessible_entrance":_ACC},
+    {"id":7,  "name":"Dr. Alvin Woods Building",       "code":"DAWB", "street":"75 University Ave W", "connected":True,  "lat":43.47339,"lng":-80.5294,  "contains":"classrooms and quiet study rooms on floors 3-5", "accessible_entrance":_ACC},
+    {"id":8,  "name":"Arts Building",                  "code":"C/E",  "street":"75 University Ave W", "connected":True,  "lat":43.4738, "lng":-80.52931, "contains":"Faculty of Arts lecture theatres; the Concourse and Solarium are at the Arts E end", "accessible_entrance":_ACC},
+    {"id":9,  "name":"Fred Nichols Campus Centre",     "code":"FNCC", "street":"75 University Ave W", "connected":True,  "lat":43.4737, "lng":-80.52868, "contains":"the Concourse, 24-Hour Lounge, Solarium, Turret, Wilf's, food and the Students' Union", "accessible_entrance":_ACC},
+    {"id":10, "name":"Laurier Library",                "code":"L",    "street":"75 University Ave W", "connected":True,  "lat":43.47296,"lng":-80.52997, "contains":"computer labs, group study rooms and a café; open 24h during exams", "accessible_entrance":_ACC},
+    {"id":11, "name":"Schlegel Building",              "code":"SB",   "street":"75 University Ave W", "connected":True,  "lat":43.47342,"lng":-80.53031, "contains":"the Schlegel Centre for Entrepreneurship & Social Innovation; atrium study", "accessible_entrance":_ACC},
+    {"id":12, "name":"Savvas Chamberlain Music Building","code":"M",  "street":"75 University Ave W", "connected":True,  "lat":43.47473,"lng":-80.52784, "contains":"the Faculty of Music, practice studios and study rooms", "accessible_entrance":_ACC},
 ]
 
-# Today's hours by building id. TODO: pull from live Laurier data source.
+# Building hours by id. Academic buildings are open 7am-11pm daily per wlu.ca;
+# Library/Dining/Athletics vary. TODO: pull live from Laurier's data source.
 BUILDING_HOURS = {
-    1: {"open": "07:00", "close": "22:00"},
-    2: {"open": "07:30", "close": "22:30"},
-    3: {"open": "08:00", "close": "00:00"},
-    4: {"open": "07:00", "close": "21:00"},
-    5: {"open": "07:00", "close": "22:00"},
-    6: {"open": "06:00", "close": "23:00"},
+    1:  {"open": "07:00", "close": "23:00"},
+    2:  {"open": "07:00", "close": "23:00"},
+    3:  {"open": "07:00", "close": "23:00"},
+    4:  {"open": "07:00", "close": "23:00"},
+    5:  {"open": "07:00", "close": "23:00"},
+    6:  {"open": "06:00", "close": "23:00"},
+    7:  {"open": "07:00", "close": "23:00"},
+    8:  {"open": "07:00", "close": "23:00"},
+    9:  {"open": "07:00", "close": "23:00"},
+    10: {"open": "08:00", "close": "00:00"},
+    11: {"open": "07:00", "close": "23:00"},
+    12: {"open": "07:00", "close": "23:00"},
 }
 
 @app.get("/api/buildings")
@@ -193,33 +240,35 @@ def report_goose(report: GooseReport, user=Depends(get_current_user)):
 # ── Indoor routes, lecture halls & closures (powers GoldenHawk AI-01) ──────
 # Indoor / covered connections between buildings — the data GoldenHawk needs to
 # suggest the fastest *indoor* route and keep students out of the rain.
+# The core academic buildings are linked indoors through the CONCOURSE (at Arts
+# E / Fred Nichols Campus Centre). We model that hub: each core building connects
+# to the Concourse (Fred Nichols). Lazaridis Hall (across University Ave), the
+# Athletic Complex and residences are OUTDOOR walks — no indoor connection.
+# Times are estimates; Laurier publishes no official tunnel map.
 INDOOR_CONNECTIONS = [
-    {"id": 1, "from": "Peters Building", "to": "BA Building",
-     "type": "indoor tunnel", "minutes": 4, "covered": True,
-     "note": "Underground tunnel — fastest dry route, great in rain/snow."},
-    {"id": 2, "from": "Science Building", "to": "Arts Building",
-     "type": "covered walkway", "minutes": 3, "covered": True,
-     "note": "Sheltered link bridge on the 2nd floor."},
-    {"id": 3, "from": "BA Building", "to": "Lazaridis Hall",
-     "type": "indoor concourse", "minutes": 5, "covered": True,
-     "note": "Connected through the main concourse without going outside."},
+    {"id": 1, "from": "Arts Building",             "to": "Fred Nichols Campus Centre", "type": "indoor link through the Concourse", "minutes": 1, "covered": True, "note": "The Concourse sits at the Arts E end."},
+    {"id": 2, "from": "Bricker Academic Building", "to": "Science Building",            "type": "indoor link", "minutes": 2, "covered": True, "note": "Bricker Academic connects directly to the Science Building."},
+    {"id": 3, "from": "Bricker Academic Building", "to": "Fred Nichols Campus Centre", "type": "indoor link through the Concourse", "minutes": 2, "covered": True, "note": "Bricker links toward the Concourse."},
+    {"id": 4, "from": "Dr. Alvin Woods Building",  "to": "Arts Building",               "type": "indoor link", "minutes": 1, "covered": True, "note": "Indoors between Arts and the Dr. Alvin Woods wing."},
+    {"id": 5, "from": "Dr. Alvin Woods Building",  "to": "Schlegel Building",           "type": "indoor link", "minutes": 1, "covered": True, "note": "Indoors between DAWB and Schlegel."},
+    {"id": 6, "from": "Schlegel Building",         "to": "Frank C. Peters Building",    "type": "indoor link", "minutes": 1, "covered": True, "note": "Peters and Schlegel connect indoors."},
+    {"id": 7, "from": "Frank C. Peters Building",  "to": "Laurier Library",             "type": "indoor link", "minutes": 1, "covered": True, "note": "The Library connects directly to the Peters Building."},
+    {"id": 8, "from": "Dining Hall (Paul Martin Centre)", "to": "Fred Nichols Campus Centre", "type": "indoor link", "minutes": 1, "covered": True, "note": "Straight through to the Dining Hall."},
+    {"id": 9, "from": "Savvas Chamberlain Music Building", "to": "Dining Hall (Paul Martin Centre)", "type": "indoor link", "minutes": 1, "covered": True, "note": "Indoors toward the Music Building."},
 ]
 
 # Where notable lecture halls / classrooms live, so GoldenHawk can resolve a
 # student's "my lecture hall" to a building and route them there.
 LECTURE_HALLS = [
-    {"room": "BA 202",        "building": "BA Building",        "note": "Large lecture theatre, east side floor 2."},
-    {"room": "Arts 1E1–1E6",  "building": "Arts Building",      "note": "First-floor lecture theatres."},
-    {"room": "SBE 1230",      "building": "Lazaridis Hall",     "note": "Tiered lecture hall, main floor."},
-    {"room": "N1001",         "building": "Science Building",   "note": "Ground-floor science lecture hall."},
+    {"room": "BA 202",        "building": "Bricker Academic Building",  "note": "Large lecture theatre in Bricker Academic."},
+    {"room": "N1001",         "building": "Science Building",           "note": "Ground-floor Science Building lecture hall."},
+    {"room": "DAWB 2-101",    "building": "Dr. Alvin Woods Building",   "note": "Second-floor lecture room."},
+    {"room": "LH 1002",       "building": "Lazaridis Hall",             "note": "Lecture hall in Lazaridis Hall (across University Ave)."},
+    {"room": "P2027",         "building": "Frank C. Peters Building",   "note": "Classroom in the Peters Building."},
 ]
 
 # Temporary closures / construction the AI should route around.
-CLOSURES_DB = [
-    {"id": 1, "location": "Peters Building — main entrance",
-     "detail": "Under repair until Nov 15. Use the south entrance on King St.",
-     "reroute": "Enter via the BA tunnel or the King St south door."},
-]
+CLOSURES_DB: list[dict] = []
 
 @app.get("/api/indoor-routes")
 def list_indoor_routes():
@@ -256,15 +305,32 @@ def create_review(review: ReviewCreate, user=Depends(get_current_user)):
 # ── GoldenHawk AI Chat ────────────────────────────────────────────────────
 def build_campus_context() -> str:
     """Serialize the live campus data into a text block the LLM can reason over."""
-    lines: list[str] = ["Wilfrid Laurier University — Waterloo Campus", ""]
+    now = datetime.now(CAMPUS_TZ) if CAMPUS_TZ else datetime.now()
+    now_minutes = now.hour * 60 + now.minute
 
-    lines.append("BUILDINGS (with today's hours and accessible entrances):")
+    lines: list[str] = ["Wilfrid Laurier University — Waterloo Campus", ""]
+    lines.append(
+        f'CURRENT LOCAL TIME: {now.strftime("%A, %B %-d, %Y at %-I:%M %p")} '
+        f'(Waterloo, Ontario). Use this to say whether places are open RIGHT NOW.'
+    )
+    lines.append("")
+
+    lines.append("BUILDINGS (address, what's inside, live open/closed status; buildings marked [core] are linked indoors through the Concourse):")
     for b in BUILDINGS_DB:
         h = BUILDING_HOURS.get(b["id"], {})
+        open_s, close_s = h.get("open", "N/A"), h.get("close", "N/A")
+        status = is_open_now(open_s, close_s, now_minutes)
+        if status is True:
+            now_tag = f"OPEN NOW (until {close_s})"
+        elif status is False:
+            now_tag = f"CLOSED NOW (opens {open_s})"
+        else:
+            now_tag = "hours unknown"
+        core = "[core] " if b.get("connected") else "[outdoor walk] "
+        code = f' ({b["code"]})' if b.get("code") else ""
         lines.append(
-            f'- {b["name"]} — open {h.get("open", "N/A")}–{h.get("close", "N/A")} '
-            f'today. Accessible entrance: {b["accessible_entrance"]}. '
-            f'(lat {b["lat"]}, lng {b["lng"]})'
+            f'- {core}{b["name"]}{code} — {b.get("street", "")}. {b.get("contains", "")}. '
+            f'{now_tag} (hours {open_s}–{close_s}). Accessible: {b["accessible_entrance"]}.'
         )
 
     lines.append("")
