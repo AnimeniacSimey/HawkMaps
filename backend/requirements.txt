@@ -1,9 +1,10 @@
 fastapi
-uvicorn
+uvicorn[standard]
 python-jose[cryptography]
 passlib
 bcrypt
 python-dotenv
+httpx            # used for the free Groq provider (GoldenHawk AI)
 
-# GoldenHawk AI assistant — Claude (Anthropic) LLM
+# GoldenHawk AI assistant — optional Claude (Anthropic) provider
 anthropic

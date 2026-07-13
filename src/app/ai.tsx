@@ -29,14 +29,15 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BRAND } from '@/constants/theme';
 import { answerLocally } from '@/lib/goldenhawkLocal';
+import { DEFAULT_API_BASE } from '@/config';
 
 // ── API config ─────────────────────────────────────────────────────────
-// Points at the Python backend that runs GoldenHawk AI.
-// Set it in a `.env` file at the project root (Expo auto-loads EXPO_PUBLIC_*):
-//   EXPO_PUBLIC_API_BASE=http://192.168.1.42:8000
-// Use your machine's LAN IP, NOT localhost — a physical phone can't reach
-// localhost on your computer. If unset, the chat uses local demo replies.
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE ?? '';
+// Points at the Python backend that runs GoldenHawk AI. Resolution order:
+//   1. EXPO_PUBLIC_API_BASE from a local `.env` (your own machine while dev'ing)
+//      e.g. EXPO_PUBLIC_API_BASE=http://192.168.1.42:8000  (LAN IP, not localhost)
+//   2. DEFAULT_API_BASE from src/config.ts (the deployed backend, shared by the team)
+// If both are empty the chat runs fully offline on the on-device engine.
+const API_BASE = process.env.EXPO_PUBLIC_API_BASE || DEFAULT_API_BASE;
 
 // Only send the last few turns as context — keeps requests small and cheap.
 const HISTORY_TURNS = 8;
