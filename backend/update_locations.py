@@ -26,7 +26,7 @@ from pathlib import Path
 input_file = "campus_locations.txt"
 
 # The TypeScript file that will be updated with the new location data
-output_file = "tester.ts"
+output_file = "locations.ts"
 
 def updateLocations(filepath, outputPath):
     # Open the file and read its contents

@@ -205,7 +205,15 @@ If both keys are set, Claude is used. Without any key, GoldenHawk still answers
 using built-in keyword fallback replies, so the chat tab works offline. Live
 campus data (buildings, hours, indoor routes, lecture halls, study-space
 availability, events, closures, goose sightings) is injected as context on
-every request — see [`backend/goldenhawk.py`](backend/goldenhawk.py).
+every request — including the **current Waterloo time and a live open/closed
+status** for each building, so GoldenHawk can say whether a place is open right
+now rather than just reciting hours — see
+[`backend/goldenhawk.py`](backend/goldenhawk.py).
+
+The chat UI ([`src/app/ai.tsx`](src/app/ai.tsx)) adds tappable starter prompts,
+a word-by-word typewriter reveal, and — when a reply comes from the offline
+keyword fallback instead of the live model — an honest "Offline" badge with a
+**Retry** button to re-attempt the real AI.
 
 ### Available Endpoints
 
