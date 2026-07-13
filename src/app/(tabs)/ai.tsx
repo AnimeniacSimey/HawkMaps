@@ -29,14 +29,15 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BRAND } from '@/constants/theme';
 import { answerLocally } from '@/lib/goldenhawkLocal';
+import { DEFAULT_API_BASE } from '@/config';
 
 // ── API config ─────────────────────────────────────────────────────────
-// Points at the Python backend that runs GoldenHawk AI.
-// Set it in a `.env` file at the project root (Expo auto-loads EXPO_PUBLIC_*):
-//   EXPO_PUBLIC_API_BASE=http://192.168.1.42:8000
-// Use your machine's LAN IP, NOT localhost — a physical phone can't reach
-// localhost on your computer. If unset, the chat uses local demo replies.
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE ?? '';
+// Points at the Python backend that runs GoldenHawk AI. Resolution order:
+//   1. EXPO_PUBLIC_API_BASE from a local `.env` (your own machine while dev'ing)
+//      e.g. EXPO_PUBLIC_API_BASE=http://192.168.1.42:8000  (LAN IP, not localhost)
+//   2. DEFAULT_API_BASE from src/config.ts (the deployed backend, shared by the team)
+// If both are empty the chat runs fully offline on the on-device engine.
+const API_BASE = process.env.EXPO_PUBLIC_API_BASE || DEFAULT_API_BASE;
 
 // Only send the last few turns as context — keeps requests small and cheap.
 const HISTORY_TURNS = 8;
@@ -73,11 +74,17 @@ async function requestReply(
 ): Promise<{ text: string; source: Source }> {
   if (!API_BASE) return { text: answerLocally(message), source: 'offline' };
   try {
+    // 60s cap: rides a free-tier cold start, but won't hang forever if the
+    // backend is truly down (then it falls back to the on-device engine).
+    const ctrl = new AbortController();
+    const abort = setTimeout(() => ctrl.abort(), 60000);
     const res = await fetch(`${API_BASE}/api/ai/chat`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ message, history }),
+      signal:  ctrl.signal,
     });
+    clearTimeout(abort);
     if (!res.ok) throw new Error(`API ${res.status}`);
     const data = (await res.json()) as { reply?: string; source?: string };
     // Real AI reply → use it. If the backend fell back to keyword rules (no AI
@@ -111,18 +118,22 @@ export default function AIScreen() {
   );
 
   // Poll the backend so the header reflects Live vs Offline and self-heals.
-  // Tolerates a single transient failure (Wi-Fi blip) before showing offline.
+  // The timeout is generous (60s) so a hosted free-tier COLD START — which can
+  // take ~50s to wake — stays "Connecting…" instead of falsely showing Offline.
+  // Polls are chained (next one 15s after the previous settles) so a slow wake
+  // doesn't stack overlapping requests.
   useEffect(() => {
     if (!API_BASE) return;
     let alive = true;
     let fails = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
     const check = async () => {
       try {
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 5000);
+        const abort = setTimeout(() => ctrl.abort(), 60000); // ride through cold starts
         const res = await fetch(`${API_BASE}/api/health`, { signal: ctrl.signal });
-        clearTimeout(timer);
+        clearTimeout(abort);
         if (!res.ok) throw new Error(`health ${res.status}`);
         const data = (await res.json()) as { goldenhawk_ai?: string };
         if (!alive) return;
@@ -131,13 +142,14 @@ export default function AIScreen() {
       } catch {
         if (!alive) return;
         fails += 1;
-        if (fails >= 2) setStatus('offline'); // don't flip on a single blip
+        if (fails >= 2) setStatus('offline'); // tolerate one blip / mid-wake abort
+      } finally {
+        if (alive) timer = setTimeout(check, 15000);
       }
     };
 
     check();
-    const id = setInterval(check, 15000);
-    return () => { alive = false; clearInterval(id); };
+    return () => { alive = false; if (timer) clearTimeout(timer); };
   }, []);
 
   const scrollToEnd = () => listRef.current?.scrollToEnd({ animated: true });
