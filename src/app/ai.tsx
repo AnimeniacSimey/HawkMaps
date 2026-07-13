@@ -74,11 +74,17 @@ async function requestReply(
 ): Promise<{ text: string; source: Source }> {
   if (!API_BASE) return { text: answerLocally(message), source: 'offline' };
   try {
+    // 60s cap: rides a free-tier cold start, but won't hang forever if the
+    // backend is truly down (then it falls back to the on-device engine).
+    const ctrl = new AbortController();
+    const abort = setTimeout(() => ctrl.abort(), 60000);
     const res = await fetch(`${API_BASE}/api/ai/chat`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ message, history }),
+      signal:  ctrl.signal,
     });
+    clearTimeout(abort);
     if (!res.ok) throw new Error(`API ${res.status}`);
     const data = (await res.json()) as { reply?: string; source?: string };
     // Real AI reply → use it. If the backend fell back to keyword rules (no AI
@@ -112,18 +118,22 @@ export default function AIScreen() {
   );
 
   // Poll the backend so the header reflects Live vs Offline and self-heals.
-  // Tolerates a single transient failure (Wi-Fi blip) before showing offline.
+  // The timeout is generous (60s) so a hosted free-tier COLD START — which can
+  // take ~50s to wake — stays "Connecting…" instead of falsely showing Offline.
+  // Polls are chained (next one 15s after the previous settles) so a slow wake
+  // doesn't stack overlapping requests.
   useEffect(() => {
     if (!API_BASE) return;
     let alive = true;
     let fails = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
     const check = async () => {
       try {
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 5000);
+        const abort = setTimeout(() => ctrl.abort(), 60000); // ride through cold starts
         const res = await fetch(`${API_BASE}/api/health`, { signal: ctrl.signal });
-        clearTimeout(timer);
+        clearTimeout(abort);
         if (!res.ok) throw new Error(`health ${res.status}`);
         const data = (await res.json()) as { goldenhawk_ai?: string };
         if (!alive) return;
@@ -132,13 +142,14 @@ export default function AIScreen() {
       } catch {
         if (!alive) return;
         fails += 1;
-        if (fails >= 2) setStatus('offline'); // don't flip on a single blip
+        if (fails >= 2) setStatus('offline'); // tolerate one blip / mid-wake abort
+      } finally {
+        if (alive) timer = setTimeout(check, 15000);
       }
     };
 
     check();
-    const id = setInterval(check, 15000);
-    return () => { alive = false; clearInterval(id); };
+    return () => { alive = false; if (timer) clearTimeout(timer); };
   }, []);
 
   const scrollToEnd = () => listRef.current?.scrollToEnd({ animated: true });
