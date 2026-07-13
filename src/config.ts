@@ -12,4 +12,4 @@
  * Leave empty to keep the app in fully-offline mode (the on-device engine still
  * answers everything — it just won't use the live LLM).
  */
-export const DEFAULT_API_BASE = ''; // e.g. 'https://hawkmaps-api.onrender.com'
+export const DEFAULT_API_BASE = 'https://hawkmaps-api.onrender.com';
