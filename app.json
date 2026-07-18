@@ -21,10 +21,10 @@
       "predictiveBackGestureEnabled": false,
       "package": "com.anonymous.HawkMaps"
     },
-    "web": {
+    /*"web": { //Disabled web support to avoid deprecation warnings, as this is a mobile-only app
       "output": "static",
       "favicon": "./assets/images/favicon.png"
-    },
+    },*/
     "plugins": [
       "expo-router",
       [
