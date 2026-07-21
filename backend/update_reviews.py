@@ -2,7 +2,7 @@
 Author:     Ali Rauf
 Date:       2026-07-09
 Description:
-    - reads the "resteraunt_reviews.txt" file located in the "src/data" directory
+    - reads the "restaurant_reviews.txt" file located in the "src/data" directory
     - processes its contents to fix encoding issues and formatting
 
     The script replaces certain characters, splits the text into entries, and ensures each entry is properly formatted for readability.
@@ -18,9 +18,9 @@ Testing through this script:
 from pathlib import Path
 
 # The file used to read the raw location data from
-input_file = "resteraunt_reviews.txt"
+input_file = "restaurant_reviews.txt"
 
-# Extract the data from the "resteraunt_reviews.txt" file and print it to the console for debugging purposes
+# Extract the data from the "restaurant_reviews.txt" file and print it to the console for debugging purposes
 def extractReviews(filepath):
     # Open the file and read its contents
     f = open(filepath, "r")
@@ -51,7 +51,7 @@ def createReview(reviewData, filename):
     # Making sure that reviewData has the correct amount and types of data
     # If not, raise a ValueError with an appropriate message
     if len(reviewData) != 5:
-        raise ValueError("Review data must contain exactly 5 elements: [resteraunt_name, rating, subject, body, date]")
+        raise ValueError("Review data must contain exactly 5 elements: [restaurant_name, rating, subject, body, date]")
     elif reviewData[1] not in ["1", "2", "3", "4", "5"]:
         raise ValueError("Rating must be a string representing an integer between 1 and 5 inclusive!")
     elif not all(isinstance(field, str) for field in reviewData):
@@ -89,6 +89,6 @@ if __name__ == "__main__":
     # Call the extractReviews function to process the file and extract the review data
     extractReviews(inputPath)
 
-    # Call the createReview function to add a new review entry to the "resteraunt_reviews.txt" file
-    new_review_data = ["Tester Resteraunt Name", "4", "Tester Subject", "Tester Body", "15/06/2024"]
+    # Call the createReview function to add a new review entry to the "restaurant_reviews.txt" file
+    new_review_data = ["Tester restaurant Name", "4", "Tester Subject", "Tester Body", "15/06/2024"]
     createReview(new_review_data, inputPath)

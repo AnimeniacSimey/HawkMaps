@@ -6,16 +6,22 @@
  */
 
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-
+import { useState } from 'react';
 import { MAP_LAYER_CONFIG, MapLocation } from '@/data/locations';
-import { BRAND } from '@/constants/theme';
+import ReviewSheet from '@/components/reviews/ReviewSheet'
+//import { BRAND } from '@/constants/theme'; //gets deleted if i try to save, hopefully this doesn't break anything lol
+
+import ReviewSummary from '@/components/reviews/ReviewSummary';
 
 type Props = {
   location: MapLocation;
   onClose:  () => void;
+  //onViewReviews:(location:MapLocation) => void;
 };
 
 export default function LocationInfoCard({ location, onClose }: Props) {
+  const [reviewVisible, setReviewVisible] = useState(false);
+
   const cfg = MAP_LAYER_CONFIG[location.type];
 
   return (
@@ -38,12 +44,24 @@ export default function LocationInfoCard({ location, onClose }: Props) {
           {location.accessible ? (
             <Text style={styles.accessible}>♿ Accessible entrance available</Text>
           ) : null}
+          {location.type === 'food' && (
+          <ReviewSummary locationId={location.id} 
+          onPress={() => setReviewVisible(true)}
+          />
+          
+          )}
         </View>
-
+        
         <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
           <Text style={styles.closeBtnText}>✕</Text>
         </TouchableOpacity>
       </View>
+      <ReviewSheet
+          visible={reviewVisible}
+          locationId={location.id}
+          locationName={location.name}
+          onClose={() => setReviewVisible(false)}
+        />
     </View>
   );
 }

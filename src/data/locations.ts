@@ -305,7 +305,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52914,
     type: 'food',
     description: 'N/A',
-    hours: '7:30 am – 7:00 pm, Mon - Thu|7:30 am – 5:00 pm, Fri|9:00 am – 5:00 pm, Sat - Sun',
+    hours: '7:30 am – 7:00 pm, Mon - Thu \n 7:30 am – 5:00 pm, Fri \n 9:00 am – 5:00 pm, Sat - Sun',
     accessible: true,
   },
 {
