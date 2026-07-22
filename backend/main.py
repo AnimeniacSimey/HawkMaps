@@ -90,37 +90,32 @@ class GooseReport(BaseModel):
     note: Optional[str] = None
 
 # ── Auth Routes ───────────────────────────────────────────────────────────
-LAURIER_DOMAINS = ("@mylaurier.ca", "@wlu.ca")
-
-def is_laurier_email(email: str) -> bool:
-    email = email.strip().lower()
-    return email.endswith(LAURIER_DOMAINS) and email.index("@") > 0
-
 # User accounts live in a persistent SQLite database (see database.py) —
 # emails, salted password hashes, and the account designation:
 #   "student"   — regular user (everyone who signs up)
 #   "club_exec" — can create events for their own club (and only that club).
 #                 Granted manually after applying through the Google Form
 #                 linked on the Events page — there is no self-serve upgrade.
-# The DB is seeded with demo@mylaurier.ca and exec@mylaurier.ca (both "hawkmaps").
+# The DB is seeded with demo1234@mylaurier.ca and exec1234@mylaurier.ca
+# (both password "hawkmaps").
 
-# Laurier STUDENT emails are four letters followed by four digits
-# (e.g. abcd1234@mylaurier.ca). Enforced at signup.
-STUDENT_EMAIL_RE = r"^[a-z]{4}[0-9]{4}@mylaurier\.ca$"
+# Laurier emails are four letters followed by four digits, at @mylaurier.ca
+# or @wlu.ca (e.g. pera1234@mylaurier.ca). Enforced at BOTH login and signup.
+LAURIER_EMAIL_RE = r"^[a-z]{4}[0-9]{4}@(mylaurier\.ca|wlu\.ca)$"
 
-def is_valid_student_email(email: str) -> bool:
+def is_valid_laurier_email(email: str) -> bool:
     import re
-    return re.fullmatch(STUDENT_EMAIL_RE, email.strip().lower()) is not None
+    return re.fullmatch(LAURIER_EMAIL_RE, email.strip().lower()) is not None
 
 @app.post("/api/auth/signup", status_code=201)
 def signup(req: SignupRequest):
-    """Create an account with a Laurier student email, then sign the user in.
+    """Create an account with a Laurier email, then sign the user in.
 
-    The email local part must be four letters followed by four digits
-    (e.g. abcd1234@mylaurier.ca) — the standard Laurier student format.
+    The email must be four letters followed by four digits at @mylaurier.ca
+    or @wlu.ca (e.g. pera1234@mylaurier.ca).
     """
     email = req.email.strip().lower()
-    if not is_valid_student_email(email):
+    if not is_valid_laurier_email(email):
         raise HTTPException(status_code=400, detail="Must be a valid Laurier email")
     if len(req.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
@@ -139,8 +134,8 @@ def login(req: LoginRequest):
     TODO: Replace stub with Laurier Microsoft Entra SSO (OAuth2 PKCE flow).
     """
     email = req.email.strip().lower()
-    if not is_laurier_email(email):
-        raise HTTPException(status_code=400, detail="Use your Laurier email (…@mylaurier.ca)")
+    if not is_valid_laurier_email(email):
+        raise HTTPException(status_code=400, detail="Must be a valid Laurier email")
     user = db.get_user(email)
     if user is None:
         # Distinct status so the app can offer "this account does not

@@ -64,12 +64,15 @@ def init_db() -> None:
                 created_at    TEXT NOT NULL DEFAULT (datetime('now'))
             )
         """)
-    # Demo accounts so the team can sign in without registering. Seeded
-    # directly (they predate the strict abcd1234 signup format).
-    if get_user("demo@mylaurier.ca") is None:
-        create_user("demo@mylaurier.ca", "Demo Hawk", "hawkmaps", role="student")
-    if get_user("exec@mylaurier.ca") is None:
-        create_user("exec@mylaurier.ca", "Casey Exec", "hawkmaps", role="club_exec", club="CS Club")
+    # Drop legacy-format seed accounts (pre four-letters+four-digits rule) —
+    # the strict email check would lock them out of login anyway.
+    with _connect() as conn:
+        conn.execute("DELETE FROM users WHERE email IN ('demo@mylaurier.ca', 'exec@mylaurier.ca')")
+    # Demo accounts so the team can sign in without registering.
+    if get_user("demo1234@mylaurier.ca") is None:
+        create_user("demo1234@mylaurier.ca", "Demo Hawk", "hawkmaps", role="student")
+    if get_user("exec1234@mylaurier.ca") is None:
+        create_user("exec1234@mylaurier.ca", "Casey Exec", "hawkmaps", role="club_exec", club="CS Club")
 
 
 def get_user(email: str) -> Optional[dict]:

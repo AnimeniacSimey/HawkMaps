@@ -90,7 +90,7 @@ export default function LoginScreen() {
             <Text style={styles.fieldLabel}>Username:</Text>
             <TextInput
               style={styles.fieldInput}
-              placeholder="you@mylaurier.ca"
+              placeholder="abcd1234@mylaurier.ca"
               placeholderTextColor="#9ca3af"
               value={email}
               onChangeText={setEmail}

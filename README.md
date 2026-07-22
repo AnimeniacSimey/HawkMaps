@@ -152,12 +152,13 @@ The app opens on a welcome screen → sign in → the Map home tab. Accounts liv
 in a **persistent SQLite database** (`backend/database.py` → `hawkmaps.db`,
 gitignored) with salted PBKDF2 password hashes — they survive server restarts.
 
-- Signing in with an email that isn't in the database pops up
+- Emails must be a **valid Laurier address: four letters + four digits** at
+  `@mylaurier.ca` or `@wlu.ca` (e.g. `pera1234@mylaurier.ca`). Anything else
+  is rejected with "Must be a valid Laurier email" — at **both sign-in and
+  signup**, on both the frontend and the backend.
+- Signing in with a valid-format email that isn't in the database pops up
   **"This account does not exist, sign up?"** and offers to take you to the
   signup page.
-- Signing up requires a **Laurier student email: four letters + four digits**
-  (e.g. `abcd1234@mylaurier.ca`) — anything else is rejected with
-  "Must be a valid Laurier email", on both the frontend and the backend.
 - On login the account's designation (student vs club exec) is read from the
   database and drives permissions (e.g. exec-only event creation).
 
@@ -165,12 +166,13 @@ gitignored) with salted PBKDF2 password hashes — they survive server restarts.
   use the seeded demo accounts:
   | Email | Password | Role |
   |-------|----------|------|
-  | `demo@mylaurier.ca` | `hawkmaps` | student |
-  | `exec@mylaurier.ca` | `hawkmaps` | club exec (CS Club) |
+  | `demo1234@mylaurier.ca` | `hawkmaps` | student |
+  | `exec1234@mylaurier.ca` | `hawkmaps` | club exec (CS Club) |
 - **Without a backend** (no `EXPO_PUBLIC_API_BASE` set) — auth runs in local
-  demo mode: any Laurier email signs in, so the app still works in Expo Go.
-  Emails containing `exec` (e.g. `myexec@mylaurier.ca`) sign in as a CS Club
-  exec so the exec-only UI is testable offline.
+  demo mode: any **valid-format** Laurier email signs in, so the app still
+  works in Expo Go. Emails whose local part contains `exec` (e.g.
+  `exec1234@mylaurier.ca`) sign in as a CS Club exec so the exec-only UI is
+  testable offline.
 
 ### Account designations 🎓
 

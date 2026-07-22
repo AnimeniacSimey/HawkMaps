@@ -16,18 +16,11 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { API_BASE } from '@/constants/api';
 
-// Laurier email domains accepted by HawkMaps.
-const LAURIER_DOMAINS = ['@mylaurier.ca', '@wlu.ca'];
-
-export function isLaurierEmail(email: string): boolean {
-  const lower = email.trim().toLowerCase();
-  return LAURIER_DOMAINS.some((d) => lower.endsWith(d)) && lower.indexOf('@') > 0;
-}
-
-// Laurier STUDENT emails are four letters followed by four digits
-// (e.g. abcd1234@mylaurier.ca). Enforced at signup — mirrored on the backend.
-export function isValidStudentEmail(email: string): boolean {
-  return /^[a-z]{4}[0-9]{4}@mylaurier\.ca$/.test(email.trim().toLowerCase());
+// Laurier emails are four letters followed by four digits, at @mylaurier.ca
+// or @wlu.ca (e.g. pera1234@mylaurier.ca). Enforced at BOTH sign-in and
+// signup — mirrored on the backend.
+export function isValidLaurierEmail(email: string): boolean {
+  return /^[a-z]{4}[0-9]{4}@(mylaurier\.ca|wlu\.ca)$/.test(email.trim().toLowerCase());
 }
 
 /** Error thrown by auth calls; `status` is the backend HTTP status when known.
@@ -101,8 +94,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
 
   const signIn = async (email: string, password: string) => {
-    if (!isLaurierEmail(email)) {
-      throw new Error('Use your Laurier email (…@mylaurier.ca).');
+    if (!isValidLaurierEmail(email)) {
+      throw new Error('Must be a valid Laurier email');
     }
     if (!password) {
       throw new Error('Enter your password.');
@@ -120,8 +113,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signUp = async (name: string, email: string, password: string) => {
-    // Student email format: four letters + four digits (abcd1234@mylaurier.ca).
-    if (!isValidStudentEmail(email)) {
+    // Email format: four letters + four digits (pera1234@mylaurier.ca).
+    if (!isValidLaurierEmail(email)) {
       throw new Error('Must be a valid Laurier email');
     }
     if (password.length < 6) {
