@@ -13,12 +13,28 @@ import {
   BUILDINGS,
   CONNECTIONS,
   CLOSURES,
-  ROOM_NOTES,
+  ROOMS,
   SPACES,
   EVENTS,
   GEESE,
   type Building,
+  type Room,
 } from '@/data/campus';
+
+// Known real classrooms, keyed by a normalized code (no spaces/dashes, upper).
+const roomKey = (s: string) => s.toUpperCase().replace(/[\s-]/g, '');
+const ROOM_MAP = new Map<string, Room>(ROOMS.map((r) => [roomKey(r.code), r]));
+
+// Find a known classroom mentioned anywhere in the text. Handles letter-first
+// codes (N1001, BA 201, DAWB 2-104, LH1001, MLU101A) and Arts codes (1C16, 1E1).
+function lookupRoom(text: string): Room | null {
+  const re = /\b([a-z]{1,4}\s*-?\s*\d[\d-]*[a-z]?|\d[ce]\d+)\b/gi;
+  for (const m of text.matchAll(re)) {
+    const hit = ROOM_MAP.get(roomKey(m[0]));
+    if (hit) return hit;
+  }
+  return null;
+}
 
 // ── Time helpers ──────────────────────────────────────────────────────────
 function toMin(hhmm: string): number | null {
@@ -69,10 +85,14 @@ const COMMON_WORD_ALIASES = new Set([
   'us', 'ah', 'ta', 'an', 'on', 'in', 'at', 'or', 'so', 'my', 'me', 'hi', 'ok', 'no',
 ]);
 
-export type Resolved = { building: Building; room?: string };
+export type Resolved = { building: Building; room?: string; roomInfo?: Room };
 
 export function resolveLocation(text: string): Resolved | null {
   const lower = text.toLowerCase();
+
+  // 0) a known real classroom is the most specific — it pins the building.
+  const known = lookupRoom(text);
+  if (known) return { building: byId(known.building), room: known.code, roomInfo: known };
 
   // 1) explicit building name / alias — prefer the longest alias that matches
   let best: { building: Building; len: number } | null = null;
@@ -107,10 +127,10 @@ export function resolveLocation(text: string): Resolved | null {
   return best ? { building: best.building } : null;
 }
 
-function roomNote(room?: string): string {
+function roomNote(room?: string, info?: Room): string {
   if (!room) return '';
-  const note = ROOM_NOTES[room] || ROOM_NOTES[room.replace(/\s+/g, ' ')];
-  return note ? ` ${room} is ${note}.` : '';
+  if (info) return ` ${info.code} is a ${info.capacity}-seat ${info.type} on floor ${info.floor}.`;
+  return '';
 }
 
 // ── Routing: Dijkstra over covered connections ────────────────────────────
@@ -186,7 +206,7 @@ function describeRoute(from: Resolved, to: Resolved): string {
   const b = to.building;
 
   if (a.id === b.id) {
-    return `You're already at ${a.name}.${roomNote(to.room || from.room)} 🐥`;
+    return `You're already at ${a.name}.${roomNote(to.room ?? from.room, to.roomInfo ?? from.roomInfo)} 🐥`;
   }
 
   const path = shortestPath(a.id, b.id);
@@ -214,7 +234,7 @@ function describeRoute(from: Resolved, to: Resolved): string {
     .filter(Boolean)
     .map((c) => `⚠️ ${c!.detail} ${c!.reroute}`);
 
-  return [body + roomNote(to.room), ...warnings].join('\n');
+  return [body + roomNote(to.room, to.roomInfo), ...warnings].join('\n');
 }
 
 // ── Intent: pull an origin and destination out of the message ─────────────
@@ -328,7 +348,16 @@ function answerInfo(loc: Resolved, now: number): string {
     ? 'part of the indoor Concourse-connected core'
     : 'a short outdoor walk from the core';
   const code = b.code ? ` (${b.code})` : '';
-  return `${b.name}${code} — ${b.street}. ${cap(b.contains)}. ${cap(statusPhrase(b, now))}; ${where}.${roomNote(loc.room)} Ask me for a route and I'll map it 🐥`;
+  return `${b.name}${code} — ${b.street}. ${cap(b.contains)}. ${cap(statusPhrase(b, now))}; ${where}.${roomNote(loc.room, loc.roomInfo)} Ask me for a route and I'll map it 🐥`;
+}
+
+// A specific known classroom → capacity, type, floor, building.
+function answerRoom(loc: Resolved, now: number): string {
+  const r = loc.roomInfo!;
+  const b = loc.building;
+  const where = b.connected ? 'the indoor Concourse-connected core' : 'a short outdoor walk from the core';
+  const code = b.code ? ` (${b.code})` : '';
+  return `${r.code} is a ${r.capacity}-seat ${r.type} on floor ${r.floor} of ${b.name}${code} — ${b.street}. ${cap(statusPhrase(b, now))}; ${where}. Ask me for a route and I'll map it 🐥`;
 }
 
 // When a student gives only a destination ("how do I get to BA 202"), route
@@ -336,7 +365,7 @@ function answerInfo(loc: Resolved, now: number): string {
 const CONCOURSE_ID = 'fred-nichols-campus-centre';
 function routeFromDefault(dest: Resolved, now: number): string {
   if (dest.building.id === CONCOURSE_ID) {
-    return `The ${dest.building.name} (the Concourse) is central campus — ${statusPhrase(dest.building, now)}.${roomNote(dest.room)} Tell me where you're coming from and I'll route you 🗺️`;
+    return `The ${dest.building.name} (the Concourse) is central campus — ${statusPhrase(dest.building, now)}.${roomNote(dest.room, dest.roomInfo)} Tell me where you're coming from and I'll route you 🗺️`;
   }
   const origin = BUILDINGS.find((b) => b.id === CONCOURSE_ID);
   if (!origin) return answerInfo(dest, now);
@@ -375,6 +404,12 @@ export function answerLocally(message: string): string {
     return `Where do you want to go? Give me a building or room — e.g. "how do I get to BA 202" 🗺️`;
   }
 
+  // "how big is N1001?" / "capacity of LH1001" / "what kind of room is BA 202"
+  if (/\b(how (big|many|large)|capacity|seats?|holds?|what (kind|type) of room)\b/i.test(text)) {
+    const r = resolveLocation(text);
+    if (r?.roomInfo) return answerRoom(r, now);
+  }
+
   if (/\b(hours?|open|close[ds]?|when.*(open|close))\b/.test(lower)) return answerHours(text, now);
   if (/\b(study|quiet|seat|work|desk|spot to)\b/.test(lower)) return answerStudy();
   if (/\b(food|eat|eating|dining|caf[eé]|hungry|menu|lunch|dinner|breakfast|brunch|snacks?|coffee|restaurants?|bite)\b/.test(lower)) return answerFood(now);
@@ -387,15 +422,15 @@ export function answerLocally(message: string): string {
     /\b(what('?s| is)?\s+(in|inside|at|near)|where('?s| is)?|what street|which street|address|located|which building|tell me about)\b/i.test(text);
   if (isLocationQuestion) {
     const info = resolveLocation(text);
-    if (info) return answerInfo(info, now);
+    if (info) return info.roomInfo ? answerRoom(info, now) : answerInfo(info, now);
     // Asked where something is, but it's not in our data — be honest.
     return `I don't have that place in my campus info — it might be off-campus, or just something I don't know. Try the map tab, or ask about a building like the Science Building or the Library 🐥`;
   }
 
-  // A bare building/room mention with no other intent → building profile.
+  // A bare building/room mention with no other intent → profile.
   const loc = resolveLocation(text);
   if (loc) {
-    return answerInfo(loc, now);
+    return loc.roomInfo ? answerRoom(loc, now) : answerInfo(loc, now);
   }
 
   // Greeting / empty → friendly intro. A real question we couldn't handle → say so.
