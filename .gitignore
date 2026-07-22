@@ -15,3 +15,6 @@ expo-env.d.ts
 # Python backend virtualenv
 backend/venv/
 __pycache__/
+
+# SQLite user database (backend/database.py) — local data, never commit
+backend/*.db

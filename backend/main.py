@@ -22,6 +22,7 @@ except Exception:  # pragma: no cover - tzdata missing; fall back to server loca
     CAMPUS_TZ = None
 
 import goldenhawk
+import database as db
 
 
 app = FastAPI(title="Hawk Maps API", version="0.1.0")
@@ -47,11 +48,12 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     if not token.startswith("demo_token_"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     username = token.replace("demo_token_", "")
-    # Resolve the account so role/club survive into authed routes.
-    for email, u in USERS_DB.items():
-        if email.split("@")[0] == username:
-            return {"username": username, "email": email, "role": u.get("role", "student"), "club": u.get("club")}
-    return {"username": username, "email": f"{username}@mylaurier.ca", "role": "student", "club": None}
+    # Resolve the account in the database so role/club (and therefore
+    # permissions, e.g. exec-only event creation) survive into authed routes.
+    user = db.get_user_by_username(username)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account no longer exists")
+    return {"username": username, "email": user["email"], "role": user["role"], "club": user["club"]}
 
 # ── Models ────────────────────────────────────────────────────────────────
 class LoginRequest(BaseModel):
@@ -94,34 +96,39 @@ def is_laurier_email(email: str) -> bool:
     email = email.strip().lower()
     return email.endswith(LAURIER_DOMAINS) and email.index("@") > 0
 
-# In-memory user store: email → {name, password, role, club}.
-# TODO: move to a real database and hash passwords (passlib/bcrypt).
-#
-# Account designations:
+# User accounts live in a persistent SQLite database (see database.py) —
+# emails, salted password hashes, and the account designation:
 #   "student"   — regular user (everyone who signs up)
 #   "club_exec" — can create events for their own club (and only that club).
 #                 Granted manually after applying through the Google Form
 #                 linked on the Events page — there is no self-serve upgrade.
-#
-# Seeded with demo accounts so the team can sign in without registering.
-USERS_DB: dict[str, dict] = {
-    "demo@mylaurier.ca": {"name": "Demo Hawk", "password": "hawkmaps", "role": "student",   "club": None},
-    "exec@mylaurier.ca": {"name": "Casey Exec", "password": "hawkmaps", "role": "club_exec", "club": "CS Club"},
-}
+# The DB is seeded with demo@mylaurier.ca and exec@mylaurier.ca (both "hawkmaps").
+
+# Laurier STUDENT emails are four letters followed by four digits
+# (e.g. abcd1234@mylaurier.ca). Enforced at signup.
+STUDENT_EMAIL_RE = r"^[a-z]{4}[0-9]{4}@mylaurier\.ca$"
+
+def is_valid_student_email(email: str) -> bool:
+    import re
+    return re.fullmatch(STUDENT_EMAIL_RE, email.strip().lower()) is not None
 
 @app.post("/api/auth/signup", status_code=201)
 def signup(req: SignupRequest):
-    """Create an account with a Laurier email, then sign the user in."""
+    """Create an account with a Laurier student email, then sign the user in.
+
+    The email local part must be four letters followed by four digits
+    (e.g. abcd1234@mylaurier.ca) — the standard Laurier student format.
+    """
     email = req.email.strip().lower()
-    if not is_laurier_email(email):
-        raise HTTPException(status_code=400, detail="Use your Laurier email (…@mylaurier.ca)")
+    if not is_valid_student_email(email):
+        raise HTTPException(status_code=400, detail="Must be a valid Laurier email")
     if len(req.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-    if email in USERS_DB:
+    if db.get_user(email) is not None:
         raise HTTPException(status_code=409, detail="An account with this email already exists — sign in instead")
     # Everyone signs up as a regular student. Club-exec status is granted
     # manually after applying via the Google Form on the Events page.
-    USERS_DB[email] = {"name": req.name.strip(), "password": req.password, "role": "student", "club": None}
+    db.create_user(email, req.name.strip(), req.password, role="student")
     token = create_access_token({"sub": email.split("@")[0]})
     return {"access_token": token, "token_type": "bearer", "role": "student", "club": None}
 
@@ -134,12 +141,18 @@ def login(req: LoginRequest):
     email = req.email.strip().lower()
     if not is_laurier_email(email):
         raise HTTPException(status_code=400, detail="Use your Laurier email (…@mylaurier.ca)")
-    user = USERS_DB.get(email)
-    if user is None or user["password"] != req.password:
+    user = db.get_user(email)
+    if user is None:
+        # Distinct status so the app can offer "this account does not
+        # exist, sign up?" and route the user to the signup page.
+        raise HTTPException(status_code=404, detail="This account does not exist")
+    if not db.verify_password(email, req.password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    # Role + club come from the database row and drive permissions
+    # (e.g. only "club_exec" accounts may POST /api/events).
     token = create_access_token({"sub": email.split("@")[0]})
     return {"access_token": token, "token_type": "bearer",
-            "role": user.get("role", "student"), "club": user.get("club")}
+            "role": user["role"], "club": user["club"]}
 
 @app.get("/api/auth/sso")
 def sso_redirect():
