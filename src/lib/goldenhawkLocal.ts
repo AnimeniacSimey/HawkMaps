@@ -14,6 +14,8 @@ import {
   CONNECTIONS,
   CLOSURES,
   ROOMS,
+  FLOORS,
+  DIRECTORY,
   SPACES,
   EVENTS,
   GEESE,
@@ -360,6 +362,37 @@ function answerRoom(loc: Resolved, now: number): string {
   return `${r.code} is a ${r.capacity}-seat ${r.type} on floor ${r.floor} of ${b.name}${code} — ${b.street}. ${cap(statusPhrase(b, now))}; ${where}. Ask me for a route and I'll map it 🐥`;
 }
 
+// "what's on the 4th floor of Bricker?" → floor directory (where we have one).
+function answerFloor(text: string): string | null {
+  const loc = resolveLocation(text);
+  if (!loc) return null;
+  const floors = FLOORS[loc.building.id];
+  let fl: number | null = null;
+  const m = text.match(/\b(\d+)\s*(?:st|nd|rd|th)?\s*floor\b/i) || text.match(/\bfloor\s*(\d+)\b/i);
+  if (m) fl = parseInt(m[1], 10);
+  else if (/\b(ground|main|first)\s*floor\b/i.test(text)) fl = 1;
+  if (!floors) {
+    return `I don't have a floor-by-floor list for ${loc.building.name} yet (I do for Bricker Academic). ${cap(loc.building.contains)}.`;
+  }
+  if (fl == null) {
+    return `${loc.building.name}, floor by floor — ${floors.map((f) => `${f.floor}) ${f.has}`).join('; ')} 🏫`;
+  }
+  const hit = floors.find((f) => f.floor === fl);
+  return hit
+    ? `Floor ${fl} of ${loc.building.name} has ${hit.has} 🏫`
+    : `I don't have anything listed for floor ${fl} of ${loc.building.name}.`;
+}
+
+// "which building has Political Science?" / "where's the Registrar?"
+function answerDirectory(text: string): string | null {
+  const l = text.toLowerCase();
+  const hits = DIRECTORY.filter((d) => l.includes(d.term)).sort((a, b) => b.term.length - a.term.length);
+  if (!hits.length) return null;
+  const d = hits[0];
+  const b = byId(d.building);
+  return `${cap(d.term)} is in ${b.name}${b.code ? ` (${b.code})` : ''}${d.note ? `, ${d.note}` : ''} — ${b.street}. Ask me for a route and I'll map it 🐥`;
+}
+
 // When a student gives only a destination ("how do I get to BA 202"), route
 // from the Concourse (central campus) and state the assumption.
 const CONCOURSE_ID = 'fred-nichols-campus-centre';
@@ -410,6 +443,20 @@ export function answerLocally(message: string): string {
     if (r?.roomInfo) return answerRoom(r, now);
   }
 
+  // "what's on the 4th floor of Bricker?" / "bricker floors" / "what floor is biology on"
+  if (/\bfloors?\b/i.test(text)) {
+    const a = answerFloor(text);
+    if (a) return a;
+    const d = answerDirectory(text); // e.g. "what floor is biology on" → Bricker, 4th floor
+    if (d) return d;
+  }
+
+  // "which building has Political Science?" / "where's the Registrar's office?"
+  if (/\bwhich building\b|\bwho('?s| is) in\b|\bwhere can i find\b|\bwhere.*(department|faculty|office|centre|center)\b/i.test(text)) {
+    const d = answerDirectory(text);
+    if (d) return d;
+  }
+
   if (/\b(hours?|open|close[ds]?|when.*(open|close))\b/.test(lower)) return answerHours(text, now);
   if (/\b(study|quiet|seat|work|desk|spot to)\b/.test(lower)) return answerStudy();
   if (/\b(food|eat|eating|dining|caf[eé]|hungry|menu|lunch|dinner|breakfast|brunch|snacks?|coffee|restaurants?|bite)\b/.test(lower)) return answerFood(now);
@@ -423,6 +470,9 @@ export function answerLocally(message: string): string {
   if (isLocationQuestion) {
     const info = resolveLocation(text);
     if (info) return info.roomInfo ? answerRoom(info, now) : answerInfo(info, now);
+    // Not a building/room — maybe a department or service?
+    const dir = answerDirectory(text);
+    if (dir) return dir;
     // Asked where something is, but it's not in our data — be honest.
     return `I don't have that place in my campus info — it might be off-campus, or just something I don't know. Try the map tab, or ask about a building like the Science Building or the Library 🐥`;
   }
