@@ -161,6 +161,65 @@ EVENTS_DB: list[dict] = [
     {"id": 5, "title": "Career Fair 2024",   "location": "Athletic Complex","start": "2024-11-15T10:00","club": None,          "tags": ["Career", "Free"]},
 ]
 
+# ── Event input validation ────────────────────────────────────────────────
+# Profanity / slurs / content inappropriate for a university club event.
+# Mirrored on the frontend (src/utils/moderation.ts) for instant feedback;
+# THIS check is the real enforcement. Keep the two term lists in sync.
+BLOCKED_TERMS = [
+    "fuck", "fucking", "fucker", "motherfucker", "shit", "bullshit", "shitty",
+    "shithead", "bitch", "bitchy", "asshole", "ass", "dumbass", "jackass",
+    "dick", "dickhead", "cock", "pussy", "cunt", "bastard", "slut", "whore",
+    "tits", "boobs", "blowjob", "handjob", "orgy", "porn", "hentai", "faggot",
+    "fag", "nigger", "nigga", "retard", "retarded", "rape", "raping", "rapist",
+    "nazi", "hitler", "kkk", "kys", "kill yourself", "molest",
+]
+
+# Common leetspeak / symbol substitutions used to dodge filters.
+# "*" and "#" are NOT stripped — they stay in the text and act as wildcards
+# in the match ("sh*t" → matches "shit").
+_LEET_MAP = str.maketrans({
+    "@": "a", "4": "a", "3": "e", "1": "i", "!": "i", "0": "o",
+    "$": "s", "5": "s", "7": "t", ".": "", "-": "", "_": "",
+})
+
+def contains_inappropriate(text: str) -> Optional[str]:
+    """Return the first blocked term found in `text`, or None if clean.
+
+    Matches each term on WORD BOUNDARIES after leet normalisation, allowing
+    optional whitespace between the term's letters. That catches "f u c k"
+    and "sh1t" while clean words that merely contain a bad substring
+    ("class", "assessment", "Scunthorpe") can never trigger — the letters
+    inside them aren't surrounded by word boundaries.
+    """
+    import re
+    normalized = text.lower().translate(_LEET_MAP)
+    for term in BLOCKED_TERMS:
+        letters = term.replace(" ", "")
+        # Each letter may also be a censor symbol ("sh*t"), and an optional
+        # plural "s" lets "dicks"/"sluts" match without loosening the trailing
+        # boundary (which would false-positive on "Dickens" etc.).
+        pattern = r"\b" + r"\s*".join(f"[{re.escape(c)}*#]" for c in letters) + r"s?\b"
+        if re.search(pattern, normalized):
+            return term
+    return None
+
+def validate_event_input(title: str, location: str, description: str) -> None:
+    """Raise 400 if the event fields are invalid or inappropriate."""
+    if len(title) < 3:
+        raise HTTPException(status_code=400, detail="Title must be at least 3 characters")
+    if len(title) > 80:
+        raise HTTPException(status_code=400, detail="Title must be 80 characters or fewer")
+    if len(location) > 60:
+        raise HTTPException(status_code=400, detail="Location must be 60 characters or fewer")
+    if len(description) > 500:
+        raise HTTPException(status_code=400, detail="Description must be 500 characters or fewer")
+    for label, value in (("title", title), ("location", location), ("description", description)):
+        if value and contains_inappropriate(value):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Please keep the {label} appropriate for a university club event",
+            )
+
 @app.get("/api/events")
 def list_events(search: Optional[str] = None, tag: Optional[str] = None):
     results = EVENTS_DB
@@ -184,6 +243,20 @@ def create_event(ev: EventCreate, user=Depends(get_current_user)):
             detail="Only club executives can create events — apply via the form on the Events page",
         )
     data = ev.dict()
+    data["title"] = data["title"].strip()
+    data["location"] = data["location"].strip()
+    data["description"] = data["description"].strip()
+    validate_event_input(data["title"], data["location"], data["description"])
+
+    # Times must parse and the event must end after it starts.
+    try:
+        start_dt = datetime.fromisoformat(data["start_time"])
+        end_dt = datetime.fromisoformat(data["end_time"])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Times must be ISO format, e.g. 2026-11-08T14:00")
+    if end_dt <= start_dt:
+        raise HTTPException(status_code=400, detail="The event must end after it starts")
+
     data["club"] = user["club"]  # force the exec's own club
     new_ev = {
         "id": len(EVENTS_DB) + 1,
