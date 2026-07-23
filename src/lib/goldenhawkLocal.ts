@@ -129,10 +129,15 @@ export function resolveLocation(text: string): Resolved | null {
   return best ? { building: best.building } : null;
 }
 
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
 function roomNote(room?: string, info?: Room): string {
-  if (!room) return '';
-  if (info) return ` ${info.code} is a ${info.capacity}-seat ${info.type} on floor ${info.floor}.`;
-  return '';
+  if (!room || !info) return '';
+  return ` Once inside, head to the ${ordinal(info.floor)} floor — ${info.code} is a ${info.capacity}-seat ${info.type}.`;
 }
 
 // ── Routing: Dijkstra over covered connections ────────────────────────────
@@ -385,7 +390,7 @@ function answerRoom(loc: Resolved, now: number): string {
   const b = loc.building;
   const where = b.connected ? 'the indoor Concourse-connected core' : 'a short outdoor walk from the core';
   const code = b.code ? ` (${b.code})` : '';
-  return `${r.code} is a ${r.capacity}-seat ${r.type} on floor ${r.floor} of ${b.name}${code} — ${b.street}. ${cap(statusPhrase(b, now))}; ${where}. Ask me for a route and I'll map it 🐥`;
+  return `${r.code} is on the ${ordinal(r.floor)} floor of ${b.name}${code} — a ${r.capacity}-seat ${r.type}. ${b.street}; ${cap(statusPhrase(b, now))}, ${where}. Ask me for a route and I'll map it 🐥`;
 }
 
 // "what's on the 4th floor of Bricker?" → floor directory (where we have one).
@@ -405,8 +410,8 @@ function answerFloor(text: string): string | null {
   }
   const hit = floors.find((f) => f.floor === fl);
   return hit
-    ? `Floor ${fl} of ${loc.building.name} has ${hit.has} 🏫`
-    : `I don't have anything listed for floor ${fl} of ${loc.building.name}.`;
+    ? `The ${ordinal(fl)} floor of ${loc.building.name} has ${hit.has} 🏫`
+    : `I don't have anything listed for the ${ordinal(fl)} floor of ${loc.building.name}.`;
 }
 
 // "which building has Political Science?" / "where's the Registrar?"
