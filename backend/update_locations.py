@@ -1,7 +1,7 @@
 '''
 Author:     Ali Rauf
 Date:       2026-07-22
-Description:
+Description for updateLocations():
     - reads the "campus_locations.txt" file located in the "src/data" directory
     - processes its contents to fix encoding issues and formatting, creating TypeScript objects for each location in string form
     - creates / updates the "study_spaces.csv" file in the "src/data" directory with all the study spaces
@@ -23,6 +23,8 @@ Testing through this script:
         - functionality of the 'updateLocations' function and ensure that the TypeScript file is updated correctly with the new locations
         - functionality of the 'updateStudySpacesFile' function and ensure that the 'study_spaces.csv' file is updated correctly with the new study space data
         - functionality of the 'getStudySpaceData' function and ensure that it returns the correct data from the 'study_spaces.csv' file
+        - functionality of the 'getAvailableSpaces' function and ensure that it returns the correct list of available study spaces
+        - functionality of the 'findSpace' function and ensure that it returns the correct list of study spaces matching the search query
 '''
 
 from pathlib import Path
@@ -92,6 +94,25 @@ def getStudySpaceData():
             splitLine = line.split(",")
             output.append([splitLine[0], splitLine[1], splitLine[2], splitLine[3].strip()])
     return output
+
+# Returns the names of every study space that currently has at least one free seat.
+# Assumption: "available" = occupied < total (has room), not strictly zero-occupied.
+def getAvailableSpaces():
+    available = []
+    for space in getStudySpaceData():
+        name, busyIndicator, totalSeats, occupiedSeats = space
+        if int(occupiedSeats) < int(totalSeats):
+            available.append(name)
+    return available
+
+# Case-insensitive search by name over study spaces only. Returns matching names.
+def findSpace(query):
+    results = []
+    for space in getStudySpaceData():
+        name = space[0]
+        if query.lower() in name.lower():
+            results.append(name)
+    return results
 
 # Function to create a TypeScript object in string form for a location based on the provided data
 def createLocation(locationData, obj_id):
@@ -185,3 +206,14 @@ if __name__ == "__main__":
     for space in getStudySpaceData():
         print(space)
     print("---------------------------------------------------------------------------------------------------")
+
+    # Call the getAvailableSpaces function to retrieve the list of available study spaces and print it
+    print("Available Now")
+    for space in getAvailableSpaces():
+        print(space)
+
+    # Call the findSpace function to search for study spaces matching a specific query and print the results
+    print("---------------------------------------------------------------------------------------------------")
+    print("Find a Space: 'library'")
+    for space in findSpace("library"):
+        print(space)
