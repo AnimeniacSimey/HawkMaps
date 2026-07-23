@@ -292,6 +292,19 @@ function parseRoute(text: string): { origin: string | null; dest: string | null 
   return { origin, dest };
 }
 
+// Food outlets sit inside a building but keep their own (shorter) hours, which
+// we don't have. We know WHERE they are, so say that rather than passing the
+// building's hours off as the outlet's.
+const FOOD_OUTLETS: [string, string][] = [
+  ['tim hortons', 'science-building'],
+  ['timmies', 'science-building'],
+  ['tims', 'science-building'],
+  ["wilf's", 'fred-nichols-campus-centre'],
+  ['wilfs', 'fred-nichols-campus-centre'],
+  ['veritas', 'student-services-building'],
+  ['fresh food', 'dining-hall'],
+];
+
 // ── Non-route intents ─────────────────────────────────────────────────────
 // True only for broad "what's open right now?" style questions — used to decide
 // whether a hours question with no resolved building deserves a general summary
@@ -303,6 +316,14 @@ function looksGenericHoursQuery(text: string): boolean {
 }
 
 function answerHours(text: string, now: number): string {
+  // A cafe/outlet keeps its own hours — don't quote the building's as if they were.
+  const outlet = FOOD_OUTLETS.find(([t]) => text.toLowerCase().includes(t));
+  if (outlet) {
+    const ob = BUILDINGS.find((b) => b.id === outlet[1]);
+    if (ob) {
+      return `${cap(outlet[0])} is inside ${ob.name} — I don't have the outlet's own hours (they usually close before the building). The building is ${statusPhrase(ob, now)} 🕒`;
+    }
+  }
   const loc = resolveLocation(text);
   if (loc) {
     const b = loc.building;
