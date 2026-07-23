@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1,
+    "lat": 43.4735,
+    "lng": -80.526,
+    "severity": "aggressive",
+    "note": "Near Alumni Hall",
+    "reported_at": "2024-11-08T08:30"
+  },
+  {
+    "id": 2,
+    "lat": 43.473,
+    "lng": -80.527,
+    "severity": "mild",
+    "note": "By library entrance",
+    "reported_at": "2024-11-08T09:10"
+  },
+  {
+    "id": 3,
+    "lat": 43.47498391009509,
+    "lng": -80.52776098251344,
+    "severity": "mild",
+    "note": "Report",
+    "reported_at": "2026-07-23T16:00:07.356247+00:00"
+  }
+]

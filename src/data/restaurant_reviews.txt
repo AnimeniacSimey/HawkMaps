@@ -1,0 +1,42 @@
+Campus Locations & Coordinates (Condensed Format)				
+				
+Building	Title	Rating	Body	Date
+Byte 75 Coffee & Social	Good	5	"Great food, enjoyable atmosphere!"	07/07/2026
+Byte 75 Coffee & Social	Okay	3	"Food was okay, service could use improvement."	08/07/2026
+Byte 75 Coffee & Social	Poor	1	Incorrect order with late service.	09/07/2026
+Frank's Coffee Haus	Good	5	"Great food, enjoyable atmosphere!"	07/07/2026
+Frank's Coffee Haus	Okay	3	"Food was okay, service could use improvement."	08/07/2026
+Frank's Coffee Haus	Poor	1	Incorrect order with late service.	09/07/2026
+Starbucks	Good	5	"Great food, enjoyable atmosphere!"	07/07/2026
+Starbucks	Okay	3	"Food was okay, service could use improvement."	08/07/2026
+Starbucks	Poor	1	Incorrect order with late service.	09/07/2026
+Torque (Dining Hall)	Good	5	"Great food, enjoyable atmosphere!"	07/07/2026
+Torque (Dining Hall)	Okay	3	"Food was okay, service could use improvement."	08/07/2026
+Torque (Dining Hall)	Poor	1	Incorrect order with late service.	09/07/2026
+Terrace Food Court	Good	5	"Great food, enjoyable atmosphere!"	07/07/2026
+Terrace Food Court	Okay	3	"Food was okay, service could use improvement."	08/07/2026
+Terrace Food Court	Poor	1	Incorrect order with late service.	09/07/2026
+Union Market	Good	5	"Great food, enjoyable atmosphere!"	07/07/2026
+Union Market	Okay	3	"Food was okay, service could use improvement."	08/07/2026
+Union Market	Poor	1	Incorrect order with late service.	09/07/2026
+Harvey's	Good	5	"Great food, enjoyable atmosphere!"	07/07/2026
+Harvey's	Okay	3	"Food was okay, service could use improvement."	08/07/2026
+Harvey's	Poor	1	Incorrect order with late service.	09/07/2026
+El Torito	Good	5	"Great food, enjoyable atmosphere!"	07/07/2026
+El Torito	Okay	3	"Food was okay, service could use improvement."	08/07/2026
+El Torito	Poor	1	Incorrect order with late service.	09/07/2026
+Golden Dough Pie Co.	Good	5	"Great food, enjoyable atmosphere!"	07/07/2026
+Golden Dough Pie Co.	Okay	3	"Food was okay, service could use improvement."	08/07/2026
+Golden Dough Pie Co.	Poor	1	Incorrect order with late service.	09/07/2026
+Subway	Good	5	"Great food, enjoyable atmosphere!"	07/07/2026
+Subway	Okay	3	"Food was okay, service could use improvement."	08/07/2026
+Subway	Poor	1	Incorrect order with late service.	09/07/2026
+Tim Hortons	Good	5	"Great food, enjoyable atmosphere!"	07/07/2026
+Tim Hortons	Okay	3	"Food was okay, service could use improvement."	08/07/2026
+Tim Hortons	Poor	1	Incorrect order with late service.	09/07/2026
+Wilf's Restaurant & Bar	Good	5	"Great food, enjoyable atmosphere!"	07/07/2026
+Wilf's Restaurant & Bar	Okay	3	"Food was okay, service could use improvement."	08/07/2026
+Wilf's Restaurant & Bar	Poor	1	Incorrect order with late service.	09/07/2026
+				
+				
+				

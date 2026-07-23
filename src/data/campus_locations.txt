@@ -1,0 +1,41 @@
+Campus Locations & Coordinates (Condensed Format)					
+					
+Building	Latitude	Longitude	Address	Hours	Type
+"Arts A, C & E Wings"	43.47381	-80.52975	75 University Ave W	"7:00 am � 11:00 pm, 7 days"	Building
+Bricker Academic	43.47273	-80.52647	75 University Ave W	"7:00 am � 11:00 pm, 7 days"	Building
+Centre for Cold Regions & Water	43.47453	-80.52092	65 Lodge Street	N/A	Building
+Concourse (Arts E)	43.47390	-80.52945	75 University Ave W	"7:00 am � 11:00 pm, 7 days"	Study
+DAWB Building	43.47331	-80.52942	75 University Ave W	"7:00 am � 11:00 pm, 7 days"	Building
+Frank Peters Building	43.47371	-80.53055	75 University Ave W	"7:00 am � 11:00 pm, 7 days"	Building
+John Aird Music (main + Theatre)	43.47423	-80.52786	75 University Ave W	"7:00 am � 11:00 pm, 7 days"	Study
+John Aird Music (practice wing)	43.47449	-80.52823	75 University Ave W	N/A	Study
+Lazaridis Hall	43.47503	-80.52947	64 University Ave W	"7:00 am � 11:00 pm, 7 days"	Building
+Northdale Campus	43.47764	-80.53150	66 Hickory Street W	N/A	Building
+Schlegel Building	43.47328	-80.53032	75 University Ave W	"7:00 am � 11:00 pm, 7 days"	Building
+Science Building	43.47347	-80.52492	75 University Ave W	"7:00 am � 11:00 pm, 7 days"	Building
+Science Research	43.47306	-80.52599	75 University Ave W	"7:00 am � 11:00 pm, 7 days"	Study
+Library	43.47295	-80.52990	75 University Ave W	"8:30 am � 11:00 pm, Mon - Thurs.8:30 am � 5:00 pm, Fri.11:00 am � 5:00 pm, Sun"	Study
+Martin Luther University College	43.47203	-80.52873	75 University Ave W	"8:30 am � 4:30 pm, Mon - Fri"	Building
+Co-op and Career Centre	43.47394	-80.52414	192 King Street N	"8:30 am � 4:30 pm, Mon/Tue/Thu/Fri.8:30 am � 7:00 pm, Wed"	Building
+Dining Hall	43.47442	-80.52870	75 University Ave W	"7:00 am � 11:00 pm, 7 days"	Food
+MacDonald House (main entrance)	43.47375	-80.52799	75 University Ave W	"8:30 am � 4:30 pm, Mon - Fri"	Building
+Regina Administration Building	43.47470	-80.52267	202 Regina Street	"7:30 am � 5:00 pm, Mon - Fri"	Building
+Community and Workplace Partnerships	43.47398	-80.52358	12 Lodge Street	"8:30 am � 4:30 pm, Mon - Fri"	Building
+WLU Campus Police	43.47538	-80.52445	232 King Street N	"7:00 am � 5:00 pm, Mon - Fri"	Building
+Byte 75 Coffee & Social	43.47503	-80.52880	Lazaridis Hall (LH)	"N/A, Mon - Fri"	Food
+Frank's Coffee Haus	43.47354	-80.52868	Fred Nichols Campus Centre (FNCC)	"N/A, Mon - Fri"	Food
+Starbucks	43.47364	-80.52914	Concourse (near Hawk Shop & University Ave W)	"7:30 am � 7:00 pm, Mon - Thu.7:30 am � 5:00 pm, Fri.9:00 am � 5:00 pm, Sat - Sun"	Food
+Fresh Food Company (Dining Hall)	43.47432	-80.52866	Chamberlain Music	"N/A, 7 days"	Food
+Terrace Food Court	43.47348	-80.52874	"Fred Nichols Campus Centre (FNCC), ground"	"7:30 am � 7:00 pm, Mon - Thu.7:30 am � 5:00 pm, Fri.Closed, Sat - Sun"	Food
+Union Market	43.47339	-80.52858	"Terrace Food Court, FNCC"	"N/A, Mon-Thu.10:00 am � 8:00 pm, Fri-Sun"	Food
+Harvey's	43.47343	-80.52882	"Terrace Food Court, FNCC"	"N/A, Mon-Thu.11:00 am � 8:00 pm, Fri-Sun"	Food
+El Torito	43.47348	-80.52879	"Terrace Food Court, FNCC"	"N/A, Mon-Thu.11:00 am � 8:00 pm, Fri-Sun"	Food
+Golden Dough Pie Co.	43.47343	-80.52873	"Terrace Food Court, FNCC"	"N/A, Mon-Thu.11:00 am � 8:00 pm, Fri-Sun"	Food
+Subway	43.47267	-80.52639	Concourse (near Hawk Shop & University Ave W)	"N/A, Mon-Fri.N/A, Sat-Sun"	Food
+Tim Hortons	43.47320	-80.52552	Concourse (near Hawk Shop & University Ave W)	"N/A, Mon-Fri.N/A, Sat-Sun"	Food
+Wilf's Restaurant & Bar	43.47352	-80.52877	"Fred Nichols Campus Centre (FNCC), 1st floor"	N/A	Food
+Hawk Shop (Bookstore & Merchandise)	43.47339	-80.52944	"Dr. Alvin Woods Building (DAWB), Concourse"	"N/A, Mon-Thu.N/A, Fri.N/A, Sat.N/A, Sun"	Building
+International News	43.47358	-80.52866	"Fred Nichols Campus Centre (FNCC), 1st floor"	"8:00 am � 10:00 pm, Mon-Fri.N/A, Sat-Sun"	Building
+Hawk Hub (Printing Services)	43.47370	-80.52931	Concourse (near Hawk Shop & Starbucks)	"N/A, Mon & Thu.N/A, Tue & Wed.9:00 am � 4:00 pm, Fri"	Building
+U-Desk (Students' Union Desk)	43.47361	-80.52882	Fred Nichols Campus Centre (FNCC)	"9:00 am � 5:00 pm, Mon-Fri"	Building
+Athletic Complex	43.47522	-80.52576	75 University Ave W	"6:00 am � 1:00 am, Mon - Thu.6:00 am � 10:00 pm, Fri.8:00 am � 10:00 pm, Sat.8:00 am � 1:00 am, Sun"	Building
