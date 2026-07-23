@@ -203,6 +203,26 @@ function closureFor(id: string) {
   return CLOSURES.find((c) => c.building === id);
 }
 
+// Indoor minutes between two core buildings (distance-based; halls aren't straight).
+const indoorMins = (a: Building, b: Building) =>
+  a.id === b.id ? 0 : Math.max(2, Math.round(walkMinutes(a, b) * 1.2));
+
+// One endpoint inside the indoor core, the other outside → stay indoors as far
+// as possible, then take the shortest outdoor hop. Picks the exit that
+// minimizes total time, and reports how long you're actually exposed.
+function splitRoute(inside: Building, outside: Building) {
+  let best: { exit: Building; indoor: number; outdoor: number; total: number } | null = null;
+  for (const exit of BUILDINGS) {
+    if (!exit.connected) continue;
+    if (exit.id !== inside.id && !shortestPath(inside.id, exit.id)) continue; // must be reachable indoors
+    const indoor = indoorMins(inside, exit);
+    const outdoor = Math.max(1, walkMinutes(exit, outside));
+    const total = indoor + outdoor;
+    if (!best || total < best.total) best = { exit, indoor, outdoor, total };
+  }
+  return best;
+}
+
 function describeRoute(from: Resolved, to: Resolved): string {
   const a = from.building;
   const b = to.building;
@@ -211,27 +231,33 @@ function describeRoute(from: Resolved, to: Resolved): string {
     return `You're already at ${a.name}.${roomNote(to.room ?? from.room, to.roomInfo ?? from.roomInfo)} 🐥`;
   }
 
-  const path = shortestPath(a.id, b.id);
   let body: string;
+  const adjacent = shortestPath(a.id, b.id);
 
-  if (path && path.steps.length === 1) {
-    // Directly adjacent — give the specific connection.
-    const s = path.steps[0];
-    body =
-      `From ${a.name}, take the ${s.kind} to ${b.name} — about ${s.minutes} min.` +
-      (s.covered ? ' Stays indoors, so you keep dry 🗺️' : ' 🗺️');
-  } else if (path) {
-    // Both in the connected academic complex. The buildings interconnect, so
-    // estimate from actual distance (not the winding graph) and keep it clean.
-    const mins = Math.max(2, Math.round(walkMinutes(a, b) * 1.2)); // indoor halls aren't straight lines
-    body = `${a.name} and ${b.name} are both in the connected academic complex — about ${mins} min indoors via the Concourse, so you stay dry 🗺️`;
+  if (a.connected && b.connected) {
+    // Both indoors. Name the specific link if they're directly adjacent.
+    if (adjacent && adjacent.steps.length === 1) {
+      body = `${a.name} → ${b.name}: ~${adjacent.steps[0].minutes} min via the ${adjacent.steps[0].kind}, indoors 🗺️`;
+    } else {
+      body = `${a.name} → ${b.name}: ~${indoorMins(a, b)} min, all indoors via the Concourse 🗺️`;
+    }
+  } else if (a.connected !== b.connected) {
+    // Mixed: walk indoors to the best exit, then only the last leg outside.
+    const inside = a.connected ? a : b;
+    const outside = a.connected ? b : a;
+    const split = splitRoute(inside, outside);
+    if (!split || split.indoor === 0) {
+      body = `${a.name} → ${b.name}: ~${Math.max(1, walkMinutes(a, b))} min outdoors 🚶`;
+    } else if (a.connected) {
+      body = `${a.name} → ${b.name}: ~${split.total} min — indoors to ${split.exit.name} (${split.indoor} min), then ${split.outdoor} min outside. Only ${split.outdoor} min exposed 🗺️`;
+    } else {
+      body = `${a.name} → ${b.name}: ~${split.total} min — ${split.outdoor} min outside to ${split.exit.name}, then indoors the rest (${split.indoor} min). Only ${split.outdoor} min exposed 🗺️`;
+    }
   } else {
-    // No indoor connection → outdoor walk (coords are exact, so floor gently).
-    const mins = Math.max(3, walkMinutes(a, b));
-    body = `${a.name} and ${b.name} aren't indoor-connected — it's about a ${mins}-min walk outdoors 🚶`;
+    // Both outside the core.
+    body = `${a.name} → ${b.name}: ~${Math.max(1, walkMinutes(a, b))} min walk outdoors 🚶`;
   }
 
-  // Warn about any closures on either endpoint.
   const warnings = [closureFor(a.id), closureFor(b.id)]
     .filter(Boolean)
     .map((c) => `⚠️ ${c!.detail} ${c!.reroute}`);
