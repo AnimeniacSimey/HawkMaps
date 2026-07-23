@@ -3,8 +3,8 @@ Hawk Maps — FastAPI Backend
 CP317 · Wilfrid Laurier University
 
 Run:
-    pip install fastapi uvicorn python-jose[cryptography] passlib bcrypt python-dotenv
-    uvicorn main:app --reload --port 8000
+    pip install -r requirements.txt
+    uvicorn main:app --reload --host 0.0.0.0 --port 8000
 """
 
 from fastapi import FastAPI, HTTPException, Depends, status
@@ -287,6 +287,11 @@ def get_event(event_id: int):
     if not ev:
         raise HTTPException(status_code=404, detail="Event not found")
     return ev
+
+@app.get("/status") #eliminate random errors
+async def status():
+    print("Someone requested /status")
+    return {"ok": True}
 
 # ── Study Spaces Routes ───────────────────────────────────────────────────
 SPACES_DB = [
