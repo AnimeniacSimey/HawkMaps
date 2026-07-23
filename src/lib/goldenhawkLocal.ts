@@ -436,9 +436,26 @@ function routeFromDefault(dest: Resolved, now: number): string {
   return `From the Concourse (central campus) — tell me if you're starting elsewhere:\n${describeRoute({ building: origin }, dest)}`;
 }
 
+// Conversation memory: the place we were last talking about, so follow-ups
+// like "how do I get there" / "is it open" don't loop back asking "where?".
+export type ChatContext = { lastPlace?: string };
+
 // ── Main entry point ──────────────────────────────────────────────────────
-export function answerLocally(message: string): string {
-  const text = message.trim();
+export function answerLocally(message: string, ctx?: ChatContext): string {
+  let text = message.trim();
+
+  // Resolve pronoun references against the last place mentioned.
+  if (ctx?.lastPlace) {
+    const place = ctx.lastPlace;
+    // "is there a gym" is an expletive, not a reference — leave it alone.
+    const expletive = /\b(is|are|was|were|any)\s+there\b/i.test(text);
+    if (!expletive && /\b(there|that place|that building)\b/i.test(text)) {
+      text = text.replace(/\b(there|that place|that building)\b/i, place);
+    } else if (/\bit\b/i.test(text) && !resolveLocation(text)) {
+      text = text.replace(/\bit\b/i, place);
+    }
+  }
+
   const lower = text.toLowerCase();
   const now = nowMinutes();
 

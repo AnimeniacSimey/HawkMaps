@@ -28,7 +28,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BRAND } from '@/constants/theme';
-import { answerLocally } from '@/lib/goldenhawkLocal';
+import { answerLocally, resolveLocation, type ChatContext } from '@/lib/goldenhawkLocal';
 import { DEFAULT_API_BASE } from '@/config';
 
 // ── API config ─────────────────────────────────────────────────────────
@@ -71,8 +71,9 @@ type Message = {
 async function requestReply(
   message: string,
   history: { role: 'user' | 'assistant'; content: string }[],
+  ctx?: ChatContext,
 ): Promise<{ text: string; source: Source }> {
-  if (!API_BASE) return { text: answerLocally(message), source: 'offline' };
+  if (!API_BASE) return { text: answerLocally(message, ctx), source: 'offline' };
   try {
     // 60s cap: rides a free-tier cold start, but won't hang forever if the
     // backend is truly down (then it falls back to the on-device engine).
@@ -90,11 +91,11 @@ async function requestReply(
     // Real AI reply → use it. If the backend fell back to keyword rules (no AI
     // key), our on-device engine is grounded in real campus data, so prefer it.
     if (data.source === 'goldenhawk-ai') {
-      return { text: (data.reply ?? '').trim() || answerLocally(message), source: 'ai' };
+      return { text: (data.reply ?? '').trim() || answerLocally(message, ctx), source: 'ai' };
     }
-    return { text: answerLocally(message), source: 'fallback' };
+    return { text: answerLocally(message, ctx), source: 'fallback' };
   } catch {
-    return { text: answerLocally(message), source: 'offline' };
+    return { text: answerLocally(message, ctx), source: 'offline' };
   }
 }
 
@@ -118,6 +119,8 @@ export default function AIScreen() {
   );
   // Lets the tappable header trigger an immediate wake/re-check (see effect below).
   const wakeRef = useRef<(() => void) | null>(null);
+  // Last place mentioned, so "how do I get there" resolves instead of looping.
+  const lastPlaceRef = useRef<string | undefined>(undefined);
 
   // Poll the backend so the header reflects Live vs Offline and self-heals.
   // The timeout is generous (60s) so a hosted free-tier COLD START — which can
@@ -186,7 +189,9 @@ export default function AIScreen() {
     setInput('');
     setLoading(true);
 
-    const reply = await requestReply(text, history);
+    const reply = await requestReply(text, history, { lastPlace: lastPlaceRef.current });
+    const named = resolveLocation(text)?.building.name;
+    if (named) lastPlaceRef.current = named;
     setMessages((prev) => [
       ...prev,
       { id: Date.now() + 1, role: 'bot', ...reply, replyTo: text, animate: true },
@@ -201,7 +206,7 @@ export default function AIScreen() {
     setMessages(remaining);
     setLoading(true);
 
-    const reply = await requestReply(userText, toHistory(remaining));
+    const reply = await requestReply(userText, toHistory(remaining), { lastPlace: lastPlaceRef.current });
     setMessages((prev) => [
       ...prev,
       { id: Date.now() + 1, role: 'bot', ...reply, replyTo: userText, animate: true },
