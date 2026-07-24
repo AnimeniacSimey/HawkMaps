@@ -330,9 +330,13 @@ def build_campus_context() -> str:
     lines.append(
         "HOW TO READ THIS: [core] buildings are linked indoors through the Concourse; "
         "[outdoor] ones need an outdoor walk. 'aka' lists the nicknames students use — "
-        "treat them as the same place. Room codes: the first digit is the floor (N1001 = "
-        "Science, ground floor). For a core<->outdoor trip, route indoors as far as "
-        "possible then only the last leg outside, and say how many minutes are exposed."
+        "treat them as the SAME place, and only use the buildings listed below (never "
+        "invent one). Nicknames are exact: 'willy' = Willison Hall (a residence, NOT "
+        "Wilf's the restaurant); 'mac' = Macdonald House; 'the caf'/'caf' = Dining Hall; "
+        "'laz' = Lazaridis Hall; 'the ac'/'rec centre' = Athletic Complex. Room codes: the "
+        "first digit is the floor (N1001 = Science, ground floor). For a core<->outdoor "
+        "trip, route indoors as far as possible then only the last leg outside, and say "
+        "how many minutes are exposed."
     )
     lines.append("")
 
