@@ -13,12 +13,30 @@ import {
   BUILDINGS,
   CONNECTIONS,
   CLOSURES,
-  ROOM_NOTES,
+  ROOMS,
+  FLOORS,
+  DIRECTORY,
   SPACES,
   EVENTS,
   GEESE,
   type Building,
+  type Room,
 } from '@/data/campus';
+
+// Known real classrooms, keyed by a normalized code (no spaces/dashes, upper).
+const roomKey = (s: string) => s.toUpperCase().replace(/[\s-]/g, '');
+const ROOM_MAP = new Map<string, Room>(ROOMS.map((r) => [roomKey(r.code), r]));
+
+// Find a known classroom mentioned anywhere in the text. Handles letter-first
+// codes (N1001, BA 201, DAWB 2-104, LH1001, MLU101A) and Arts codes (1C16, 1E1).
+function lookupRoom(text: string): Room | null {
+  const re = /\b([a-z]{1,4}\s*-?\s*\d[\d-]*[a-z]?|\d[ce]\d+)\b/gi;
+  for (const m of text.matchAll(re)) {
+    const hit = ROOM_MAP.get(roomKey(m[0]));
+    if (hit) return hit;
+  }
+  return null;
+}
 
 // ── Time helpers ──────────────────────────────────────────────────────────
 function toMin(hhmm: string): number | null {
@@ -69,10 +87,14 @@ const COMMON_WORD_ALIASES = new Set([
   'us', 'ah', 'ta', 'an', 'on', 'in', 'at', 'or', 'so', 'my', 'me', 'hi', 'ok', 'no',
 ]);
 
-export type Resolved = { building: Building; room?: string };
+export type Resolved = { building: Building; room?: string; roomInfo?: Room };
 
 export function resolveLocation(text: string): Resolved | null {
   const lower = text.toLowerCase();
+
+  // 0) a known real classroom is the most specific — it pins the building.
+  const known = lookupRoom(text);
+  if (known) return { building: byId(known.building), room: known.code, roomInfo: known };
 
   // 1) explicit building name / alias — prefer the longest alias that matches
   let best: { building: Building; len: number } | null = null;
@@ -107,10 +129,15 @@ export function resolveLocation(text: string): Resolved | null {
   return best ? { building: best.building } : null;
 }
 
-function roomNote(room?: string): string {
-  if (!room) return '';
-  const note = ROOM_NOTES[room] || ROOM_NOTES[room.replace(/\s+/g, ' ')];
-  return note ? ` ${room} is ${note}.` : '';
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function roomNote(room?: string, info?: Room): string {
+  if (!room || !info) return '';
+  return ` Once inside, head to the ${ordinal(info.floor)} floor — ${info.code} is a ${info.capacity}-seat ${info.type}.`;
 }
 
 // ── Routing: Dijkstra over covered connections ────────────────────────────
@@ -181,40 +208,66 @@ function closureFor(id: string) {
   return CLOSURES.find((c) => c.building === id);
 }
 
+// Indoor minutes between two core buildings (distance-based; halls aren't straight).
+const indoorMins = (a: Building, b: Building) =>
+  a.id === b.id ? 0 : Math.max(2, Math.round(walkMinutes(a, b) * 1.2));
+
+// One endpoint inside the indoor core, the other outside → stay indoors as far
+// as possible, then take the shortest outdoor hop. Picks the exit that
+// minimizes total time, and reports how long you're actually exposed.
+function splitRoute(inside: Building, outside: Building) {
+  let best: { exit: Building; indoor: number; outdoor: number; total: number } | null = null;
+  for (const exit of BUILDINGS) {
+    if (!exit.connected) continue;
+    if (exit.id !== inside.id && !shortestPath(inside.id, exit.id)) continue; // must be reachable indoors
+    const indoor = indoorMins(inside, exit);
+    const outdoor = Math.max(1, walkMinutes(exit, outside));
+    const total = indoor + outdoor;
+    if (!best || total < best.total) best = { exit, indoor, outdoor, total };
+  }
+  return best;
+}
+
 function describeRoute(from: Resolved, to: Resolved): string {
   const a = from.building;
   const b = to.building;
 
   if (a.id === b.id) {
-    return `You're already at ${a.name}.${roomNote(to.room || from.room)} 🐥`;
+    return `You're already at ${a.name}.${roomNote(to.room ?? from.room, to.roomInfo ?? from.roomInfo)} 🐥`;
   }
 
-  const path = shortestPath(a.id, b.id);
   let body: string;
+  const adjacent = shortestPath(a.id, b.id);
 
-  if (path && path.steps.length === 1) {
-    // Directly adjacent — give the specific connection.
-    const s = path.steps[0];
-    body =
-      `From ${a.name}, take the ${s.kind} to ${b.name} — about ${s.minutes} min.` +
-      (s.covered ? ' Stays indoors, so you keep dry 🗺️' : ' 🗺️');
-  } else if (path) {
-    // Both in the connected academic complex. The buildings interconnect, so
-    // estimate from actual distance (not the winding graph) and keep it clean.
-    const mins = Math.max(2, Math.round(walkMinutes(a, b) * 1.2)); // indoor halls aren't straight lines
-    body = `${a.name} and ${b.name} are both in the connected academic complex — about ${mins} min indoors via the Concourse, so you stay dry 🗺️`;
+  if (a.connected && b.connected) {
+    // Both indoors. Name the specific link if they're directly adjacent.
+    if (adjacent && adjacent.steps.length === 1) {
+      body = `${a.name} → ${b.name}: ~${adjacent.steps[0].minutes} min via the ${adjacent.steps[0].kind}, indoors 🗺️`;
+    } else {
+      body = `${a.name} → ${b.name}: ~${indoorMins(a, b)} min, all indoors via the Concourse 🗺️`;
+    }
+  } else if (a.connected !== b.connected) {
+    // Mixed: walk indoors to the best exit, then only the last leg outside.
+    const inside = a.connected ? a : b;
+    const outside = a.connected ? b : a;
+    const split = splitRoute(inside, outside);
+    if (!split || split.indoor === 0) {
+      body = `${a.name} → ${b.name}: ~${Math.max(1, walkMinutes(a, b))} min outdoors 🚶`;
+    } else if (a.connected) {
+      body = `${a.name} → ${b.name}: ~${split.total} min — indoors to ${split.exit.name} (${split.indoor} min), then ${split.outdoor} min outside. Only ${split.outdoor} min exposed 🗺️`;
+    } else {
+      body = `${a.name} → ${b.name}: ~${split.total} min — ${split.outdoor} min outside to ${split.exit.name}, then indoors the rest (${split.indoor} min). Only ${split.outdoor} min exposed 🗺️`;
+    }
   } else {
-    // No indoor connection → outdoor walk (coords are exact, so floor gently).
-    const mins = Math.max(3, walkMinutes(a, b));
-    body = `${a.name} and ${b.name} aren't indoor-connected — it's about a ${mins}-min walk outdoors 🚶`;
+    // Both outside the core.
+    body = `${a.name} → ${b.name}: ~${Math.max(1, walkMinutes(a, b))} min walk outdoors 🚶`;
   }
 
-  // Warn about any closures on either endpoint.
   const warnings = [closureFor(a.id), closureFor(b.id)]
     .filter(Boolean)
     .map((c) => `⚠️ ${c!.detail} ${c!.reroute}`);
 
-  return [body + roomNote(to.room), ...warnings].join('\n');
+  return [body + roomNote(to.room, to.roomInfo), ...warnings].join('\n');
 }
 
 // ── Intent: pull an origin and destination out of the message ─────────────
@@ -239,6 +292,19 @@ function parseRoute(text: string): { origin: string | null; dest: string | null 
   return { origin, dest };
 }
 
+// Food outlets sit inside a building but keep their own (shorter) hours, which
+// we don't have. We know WHERE they are, so say that rather than passing the
+// building's hours off as the outlet's.
+const FOOD_OUTLETS: [string, string][] = [
+  ['tim hortons', 'science-building'],
+  ['timmies', 'science-building'],
+  ['tims', 'science-building'],
+  ["wilf's", 'fred-nichols-campus-centre'],
+  ['wilfs', 'fred-nichols-campus-centre'],
+  ['veritas', 'student-services-building'],
+  ['fresh food', 'dining-hall'],
+];
+
 // ── Non-route intents ─────────────────────────────────────────────────────
 // True only for broad "what's open right now?" style questions — used to decide
 // whether a hours question with no resolved building deserves a general summary
@@ -250,6 +316,14 @@ function looksGenericHoursQuery(text: string): boolean {
 }
 
 function answerHours(text: string, now: number): string {
+  // A cafe/outlet keeps its own hours — don't quote the building's as if they were.
+  const outlet = FOOD_OUTLETS.find(([t]) => text.toLowerCase().includes(t));
+  if (outlet) {
+    const ob = BUILDINGS.find((b) => b.id === outlet[1]);
+    if (ob) {
+      return `${cap(outlet[0])} is inside ${ob.name} — I don't have the outlet's own hours (they usually close before the building). The building is ${statusPhrase(ob, now)} 🕒`;
+    }
+  }
   const loc = resolveLocation(text);
   if (loc) {
     const b = loc.building;
@@ -328,7 +402,47 @@ function answerInfo(loc: Resolved, now: number): string {
     ? 'part of the indoor Concourse-connected core'
     : 'a short outdoor walk from the core';
   const code = b.code ? ` (${b.code})` : '';
-  return `${b.name}${code} — ${b.street}. ${cap(b.contains)}. ${cap(statusPhrase(b, now))}; ${where}.${roomNote(loc.room)} Ask me for a route and I'll map it 🐥`;
+  return `${b.name}${code} — ${b.street}. ${cap(b.contains)}. ${cap(statusPhrase(b, now))}; ${where}.${roomNote(loc.room, loc.roomInfo)} Ask me for a route and I'll map it 🐥`;
+}
+
+// A specific known classroom → capacity, type, floor, building.
+function answerRoom(loc: Resolved, now: number): string {
+  const r = loc.roomInfo!;
+  const b = loc.building;
+  const where = b.connected ? 'the indoor Concourse-connected core' : 'a short outdoor walk from the core';
+  const code = b.code ? ` (${b.code})` : '';
+  return `${r.code} is on the ${ordinal(r.floor)} floor of ${b.name}${code} — a ${r.capacity}-seat ${r.type}. ${b.street}; ${cap(statusPhrase(b, now))}, ${where}. Ask me for a route and I'll map it 🐥`;
+}
+
+// "what's on the 4th floor of Bricker?" → floor directory (where we have one).
+function answerFloor(text: string): string | null {
+  const loc = resolveLocation(text);
+  if (!loc) return null;
+  const floors = FLOORS[loc.building.id];
+  let fl: number | null = null;
+  const m = text.match(/\b(\d+)\s*(?:st|nd|rd|th)?\s*floor\b/i) || text.match(/\bfloor\s*(\d+)\b/i);
+  if (m) fl = parseInt(m[1], 10);
+  else if (/\b(ground|main|first)\s*floor\b/i.test(text)) fl = 1;
+  if (!floors) {
+    return `I don't have a floor-by-floor list for ${loc.building.name} yet (I do for Bricker Academic). ${cap(loc.building.contains)}.`;
+  }
+  if (fl == null) {
+    return `${loc.building.name}, floor by floor — ${floors.map((f) => `${f.floor}) ${f.has}`).join('; ')} 🏫`;
+  }
+  const hit = floors.find((f) => f.floor === fl);
+  return hit
+    ? `The ${ordinal(fl)} floor of ${loc.building.name} has ${hit.has} 🏫`
+    : `I don't have anything listed for the ${ordinal(fl)} floor of ${loc.building.name}.`;
+}
+
+// "which building has Political Science?" / "where's the Registrar?"
+function answerDirectory(text: string): string | null {
+  const l = text.toLowerCase();
+  const hits = DIRECTORY.filter((d) => l.includes(d.term)).sort((a, b) => b.term.length - a.term.length);
+  if (!hits.length) return null;
+  const d = hits[0];
+  const b = byId(d.building);
+  return `${cap(d.term)} is in ${b.name}${b.code ? ` (${b.code})` : ''}${d.note ? `, ${d.note}` : ''} — ${b.street}. Ask me for a route and I'll map it 🐥`;
 }
 
 // When a student gives only a destination ("how do I get to BA 202"), route
@@ -336,16 +450,33 @@ function answerInfo(loc: Resolved, now: number): string {
 const CONCOURSE_ID = 'fred-nichols-campus-centre';
 function routeFromDefault(dest: Resolved, now: number): string {
   if (dest.building.id === CONCOURSE_ID) {
-    return `The ${dest.building.name} (the Concourse) is central campus — ${statusPhrase(dest.building, now)}.${roomNote(dest.room)} Tell me where you're coming from and I'll route you 🗺️`;
+    return `The ${dest.building.name} (the Concourse) is central campus — ${statusPhrase(dest.building, now)}.${roomNote(dest.room, dest.roomInfo)} Tell me where you're coming from and I'll route you 🗺️`;
   }
   const origin = BUILDINGS.find((b) => b.id === CONCOURSE_ID);
   if (!origin) return answerInfo(dest, now);
   return `From the Concourse (central campus) — tell me if you're starting elsewhere:\n${describeRoute({ building: origin }, dest)}`;
 }
 
+// Conversation memory: the place we were last talking about, so follow-ups
+// like "how do I get there" / "is it open" don't loop back asking "where?".
+export type ChatContext = { lastPlace?: string };
+
 // ── Main entry point ──────────────────────────────────────────────────────
-export function answerLocally(message: string): string {
-  const text = message.trim();
+export function answerLocally(message: string, ctx?: ChatContext): string {
+  let text = message.trim();
+
+  // Resolve pronoun references against the last place mentioned.
+  if (ctx?.lastPlace) {
+    const place = ctx.lastPlace;
+    // "is there a gym" is an expletive, not a reference — leave it alone.
+    const expletive = /\b(is|are|was|were|any)\s+there\b/i.test(text);
+    if (!expletive && /\b(there|that place|that building)\b/i.test(text)) {
+      text = text.replace(/\b(there|that place|that building)\b/i, place);
+    } else if (/\bit\b/i.test(text) && !resolveLocation(text)) {
+      text = text.replace(/\bit\b/i, place);
+    }
+  }
+
   const lower = text.toLowerCase();
   const now = nowMinutes();
 
@@ -375,6 +506,26 @@ export function answerLocally(message: string): string {
     return `Where do you want to go? Give me a building or room — e.g. "how do I get to BA 202" 🗺️`;
   }
 
+  // "how big is N1001?" / "capacity of LH1001" / "what kind of room is BA 202"
+  if (/\b(how (big|many|large)|capacity|seats?|holds?|what (kind|type) of room)\b/i.test(text)) {
+    const r = resolveLocation(text);
+    if (r?.roomInfo) return answerRoom(r, now);
+  }
+
+  // "what's on the 4th floor of Bricker?" / "bricker floors" / "what floor is biology on"
+  if (/\bfloors?\b/i.test(text)) {
+    const a = answerFloor(text);
+    if (a) return a;
+    const d = answerDirectory(text); // e.g. "what floor is biology on" → Bricker, 4th floor
+    if (d) return d;
+  }
+
+  // "which building has Political Science?" / "where's the Registrar's office?"
+  if (/\bwhich building\b|\bwho('?s| is) in\b|\bwhere can i find\b|\bwhere.*(department|faculty|office|centre|center)\b/i.test(text)) {
+    const d = answerDirectory(text);
+    if (d) return d;
+  }
+
   if (/\b(hours?|open|close[ds]?|when.*(open|close))\b/.test(lower)) return answerHours(text, now);
   if (/\b(study|quiet|seat|work|desk|spot to)\b/.test(lower)) return answerStudy();
   if (/\b(food|eat|eating|dining|caf[eé]|hungry|menu|lunch|dinner|breakfast|brunch|snacks?|coffee|restaurants?|bite)\b/.test(lower)) return answerFood(now);
@@ -387,15 +538,18 @@ export function answerLocally(message: string): string {
     /\b(what('?s| is)?\s+(in|inside|at|near)|where('?s| is)?|what street|which street|address|located|which building|tell me about)\b/i.test(text);
   if (isLocationQuestion) {
     const info = resolveLocation(text);
-    if (info) return answerInfo(info, now);
+    if (info) return info.roomInfo ? answerRoom(info, now) : answerInfo(info, now);
+    // Not a building/room — maybe a department or service?
+    const dir = answerDirectory(text);
+    if (dir) return dir;
     // Asked where something is, but it's not in our data — be honest.
     return `I don't have that place in my campus info — it might be off-campus, or just something I don't know. Try the map tab, or ask about a building like the Science Building or the Library 🐥`;
   }
 
-  // A bare building/room mention with no other intent → building profile.
+  // A bare building/room mention with no other intent → profile.
   const loc = resolveLocation(text);
   if (loc) {
-    return answerInfo(loc, now);
+    return loc.roomInfo ? answerRoom(loc, now) : answerInfo(loc, now);
   }
 
   // Greeting / empty → friendly intro. A real question we couldn't handle → say so.
