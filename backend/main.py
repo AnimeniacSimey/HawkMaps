@@ -22,6 +22,18 @@ except Exception:  # pragma: no cover - tzdata missing; fall back to server loca
     CAMPUS_TZ = None
 
 import goldenhawk
+import json
+import pathlib
+
+# Full campus dataset, exported from the app's src/data/campus.ts so the LIVE
+# (LLM) path shares the SAME 65 buildings, nicknames, rooms, floors and
+# departments the on-device engine uses. Regenerate campus.json when campus.ts
+# changes (see scripts/export-campus). This is what fixes "willy"/"mac" etc.
+try:
+    with open(pathlib.Path(__file__).parent / "campus.json", encoding="utf-8") as _cf:
+        CAMPUS = json.load(_cf)
+except Exception:  # pragma: no cover
+    CAMPUS = {"buildings": [], "rooms": [], "floors": {}, "directory": [], "connections": []}
 
 
 app = FastAPI(title="Hawk Maps API", version="0.1.0")
@@ -390,9 +402,10 @@ def create_review(review: ReviewCreate, user=Depends(get_current_user)):
 
 # ── GoldenHawk AI Chat ────────────────────────────────────────────────────
 def build_campus_context() -> str:
-    """Serialize the live campus data into a text block the LLM can reason over."""
+    """Serialize the FULL campus dataset (campus.json) so the LLM knows every
+    building, nickname, room, floor and department the on-device engine does."""
     now = datetime.now(CAMPUS_TZ) if CAMPUS_TZ else datetime.now()
-    now_minutes = now.hour * 60 + now.minute
+    nm = now.hour * 60 + now.minute
 
     lines: list[str] = ["Wilfrid Laurier University — Waterloo Campus", ""]
     lines.append(
@@ -400,41 +413,53 @@ def build_campus_context() -> str:
         f'(Waterloo, Ontario). Use this to say whether places are open RIGHT NOW.'
     )
     lines.append("")
+    lines.append(
+        "HOW TO READ THIS: [core] buildings are linked indoors through the Concourse; "
+        "[outdoor] ones need an outdoor walk. 'aka' lists the nicknames students use — "
+        "treat them as the SAME place, and only use the buildings listed below (never "
+        "invent one). Nicknames are exact: 'willy' = Willison Hall (a residence, NOT "
+        "Wilf's the restaurant); 'mac' = Macdonald House; 'the caf'/'caf' = Dining Hall; "
+        "'laz' = Lazaridis Hall; 'the ac'/'rec centre' = Athletic Complex. Room codes: the "
+        "first digit is the floor (N1001 = Science, ground floor). For a core<->outdoor "
+        "trip, route indoors as far as possible then only the last leg outside, and say "
+        "how many minutes are exposed."
+    )
+    lines.append("")
 
-    lines.append("BUILDINGS (address, what's inside, live open/closed status; buildings marked [core] are linked indoors through the Concourse):")
-    for b in BUILDINGS_DB:
-        h = BUILDING_HOURS.get(b["id"], {})
-        open_s, close_s = h.get("open", "N/A"), h.get("close", "N/A")
-        status = is_open_now(open_s, close_s, now_minutes)
-        if status is True:
-            now_tag = f"OPEN NOW (until {close_s})"
-        elif status is False:
-            now_tag = f"CLOSED NOW (opens {open_s})"
-        else:
-            now_tag = "hours unknown"
-        core = "[core] " if b.get("connected") else "[outdoor walk] "
+    lines.append("BUILDINGS:")
+    for b in CAMPUS.get("buildings", []):
+        st = is_open_now(b["open"], b["close"], nm)
+        tag = (f"OPEN until {b['close']}" if st is True
+               else f"CLOSED, opens {b['open']}" if st is False
+               else "card access / hours vary")
+        core = "[core]" if b.get("connected") else "[outdoor]"
         code = f' ({b["code"]})' if b.get("code") else ""
-        lines.append(
-            f'- {core}{b["name"]}{code} — {b.get("street", "")}. {b.get("contains", "")}. '
-            f'{now_tag} (hours {open_s}–{close_s}). Accessible: {b["accessible_entrance"]}.'
-        )
+        aka = [a for a in b.get("aliases", []) if a.lower() != b["name"].lower()][:6]
+        akatxt = f' aka {", ".join(aka)}.' if aka else ""
+        lines.append(f'- {core} {b["name"]}{code} — {b["street"]}. {b["contains"]}. {tag}.{akatxt}')
 
     lines.append("")
-    lines.append("LECTURE HALLS (which building each room is in):")
-    for r in LECTURE_HALLS:
-        lines.append(f'- {r["room"]} is in {r["building"]} — {r["note"]}')
+    lines.append("CLASSROOMS (real bookable rooms; code — capacity, type, floor, building):")
+    for r in CAMPUS.get("rooms", []):
+        lines.append(f'- {r["code"]}: {r["capacity"]}-seat {r["type"]}, {r["building"]} (floor {r["floor"]})')
+
+    if CAMPUS.get("floors"):
+        lines.append("")
+        lines.append("FLOOR DIRECTORY:")
+        for bname, fs in CAMPUS["floors"].items():
+            for f in fs:
+                lines.append(f'- {bname}, floor {f["floor"]}: {f["has"]}')
 
     lines.append("")
-    lines.append("INDOOR / COVERED ROUTES (use these for the fastest dry route):")
-    for c in INDOOR_CONNECTIONS:
-        lines.append(
-            f'- {c["from"]} ↔ {c["to"]} via {c["type"]}, ~{c["minutes"]} min. {c["note"]}'
-        )
+    lines.append("DEPARTMENTS / FACULTIES / SERVICES -> which building:")
+    for d in CAMPUS.get("directory", []):
+        note = f' ({d["note"]})' if d.get("note") else ""
+        lines.append(f'- {d["term"]} -> {d["building"]}{note}')
 
     lines.append("")
-    lines.append("CLOSURES (route around these):")
-    for c in CLOSURES_DB:
-        lines.append(f'- {c["location"]}: {c["detail"]} Reroute: {c["reroute"]}')
+    lines.append("INDOOR CONNECTIONS (walk between these without going outside):")
+    for c in CAMPUS.get("connections", []):
+        lines.append(f'- {c["a"]} <-> {c["b"]} via {c["kind"]}, ~{c["minutes"]} min')
 
     lines.append("")
     lines.append("STUDY SPACES (live availability):")

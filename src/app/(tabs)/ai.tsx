@@ -28,7 +28,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BRAND } from '@/constants/theme';
-import { answerLocally } from '@/lib/goldenhawkLocal';
+import { answerLocally, resolveLocation, type ChatContext } from '@/lib/goldenhawkLocal';
 import { DEFAULT_API_BASE } from '@/config';
 
 // ── API config ─────────────────────────────────────────────────────────
@@ -71,8 +71,9 @@ type Message = {
 async function requestReply(
   message: string,
   history: { role: 'user' | 'assistant'; content: string }[],
+  ctx?: ChatContext,
 ): Promise<{ text: string; source: Source }> {
-  if (!API_BASE) return { text: answerLocally(message), source: 'offline' };
+  if (!API_BASE) return { text: answerLocally(message, ctx), source: 'offline' };
   try {
     // 60s cap: rides a free-tier cold start, but won't hang forever if the
     // backend is truly down (then it falls back to the on-device engine).
@@ -90,11 +91,11 @@ async function requestReply(
     // Real AI reply → use it. If the backend fell back to keyword rules (no AI
     // key), our on-device engine is grounded in real campus data, so prefer it.
     if (data.source === 'goldenhawk-ai') {
-      return { text: (data.reply ?? '').trim() || answerLocally(message), source: 'ai' };
+      return { text: (data.reply ?? '').trim() || answerLocally(message, ctx), source: 'ai' };
     }
-    return { text: answerLocally(message), source: 'fallback' };
+    return { text: answerLocally(message, ctx), source: 'fallback' };
   } catch {
-    return { text: answerLocally(message), source: 'offline' };
+    return { text: answerLocally(message, ctx), source: 'offline' };
   }
 }
 
@@ -113,9 +114,13 @@ export default function AIScreen() {
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [input,    setInput]    = useState('');
   const [loading,  setLoading]  = useState(false);
-  const [status,   setStatus]   = useState<'checking' | 'live' | 'offline'>(
+  const [status,   setStatus]   = useState<'checking' | 'live' | 'offline' | 'waking'>(
     API_BASE ? 'checking' : 'offline',
   );
+  // Lets the tappable header trigger an immediate wake/re-check (see effect below).
+  const wakeRef = useRef<(() => void) | null>(null);
+  // Last place mentioned, so "how do I get there" resolves instead of looping.
+  const lastPlaceRef = useRef<string | undefined>(undefined);
 
   // Poll the backend so the header reflects Live vs Offline and self-heals.
   // The timeout is generous (60s) so a hosted free-tier COLD START — which can
@@ -149,7 +154,18 @@ export default function AIScreen() {
     };
 
     check();
-    return () => { alive = false; if (timer) clearTimeout(timer); };
+
+    // Manual wake: any user can tap the header to nudge the (possibly asleep)
+    // server. Cancels the scheduled poll, shows "Waking…", and re-checks now.
+    wakeRef.current = () => {
+      if (!alive) return;
+      if (timer) clearTimeout(timer);
+      fails = 0;
+      setStatus('waking');
+      check();
+    };
+
+    return () => { alive = false; if (timer) clearTimeout(timer); wakeRef.current = null; };
   }, []);
 
   const scrollToEnd = () => listRef.current?.scrollToEnd({ animated: true });
@@ -173,7 +189,9 @@ export default function AIScreen() {
     setInput('');
     setLoading(true);
 
-    const reply = await requestReply(text, history);
+    const reply = await requestReply(text, history, { lastPlace: lastPlaceRef.current });
+    const named = resolveLocation(text)?.building.name;
+    if (named) lastPlaceRef.current = named;
     setMessages((prev) => [
       ...prev,
       { id: Date.now() + 1, role: 'bot', ...reply, replyTo: text, animate: true },
@@ -188,7 +206,7 @@ export default function AIScreen() {
     setMessages(remaining);
     setLoading(true);
 
-    const reply = await requestReply(userText, toHistory(remaining));
+    const reply = await requestReply(userText, toHistory(remaining), { lastPlace: lastPlaceRef.current });
     setMessages((prev) => [
       ...prev,
       { id: Date.now() + 1, role: 'bot', ...reply, replyTo: userText, animate: true },
@@ -209,21 +227,34 @@ export default function AIScreen() {
         <Text style={styles.duck}>🐥</Text>
         <View>
           <Text style={styles.headerTitle}>GoldenHawk AI</Text>
-          <View style={styles.statusRow}>
+          <TouchableOpacity
+            style={styles.statusRow}
+            activeOpacity={0.6}
+            onPress={() => wakeRef.current?.()}
+            disabled={!API_BASE || status === 'live' || status === 'waking'}
+          >
             <View
               style={[
                 styles.statusDot,
                 status === 'live'
                   ? styles.statusDotLive
-                  : status === 'checking'
-                    ? styles.statusDotChecking
-                    : styles.statusDotOffline,
+                  : status === 'offline'
+                    ? styles.statusDotOffline
+                    : styles.statusDotChecking, // checking + waking
               ]}
             />
             <Text style={styles.headerSub}>
-              {status === 'live' ? 'Live AI connected' : status === 'checking' ? 'Connecting…' : 'Offline mode'}
+              {status === 'live'
+                ? 'Live AI connected'
+                : status === 'waking'
+                  ? 'Waking server… (~30s)'
+                  : status === 'checking'
+                    ? 'Connecting…'
+                    : API_BASE
+                      ? 'Offline — tap to wake up'
+                      : 'Offline mode'}
             </Text>
-          </View>
+          </TouchableOpacity>
         </View>
       </View>
 
