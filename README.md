@@ -148,20 +148,31 @@ EXPO_PUBLIC_API_BASE=http://192.168.1.42:8000   # your machine's LAN IP
 
 ### Sign in / Create account 🔑
 
-The app opens on a welcome screen → sign in → the Map home tab. Accounts
-require a Laurier email (`@mylaurier.ca` or `@wlu.ca`); anything else is
-rejected on both the frontend and the backend.
+The app opens on a welcome screen → sign in → the Map home tab. Accounts live
+in a **persistent SQLite database** (`backend/database.py` → `hawkmaps.db`,
+gitignored) with salted PBKDF2 password hashes — they survive server restarts.
+
+- Emails must be a **valid Laurier address: four letters + four digits** at
+  `@mylaurier.ca` or `@wlu.ca` (e.g. `pera1234@mylaurier.ca`). Anything else
+  is rejected with "Must be a valid Laurier email" — at **both sign-in and
+  signup**, on both the frontend and the backend.
+- Signing in with a valid-format email that isn't in the database pops up
+  **"This account does not exist, sign up?"** and offers to take you to the
+  signup page.
+- On login the account's designation (student vs club exec) is read from the
+  database and drives permissions (e.g. exec-only event creation).
 
 - **With the backend running** — create an account on the signup screen, or
   use the seeded demo accounts:
   | Email | Password | Role |
   |-------|----------|------|
-  | `demo@mylaurier.ca` | `hawkmaps` | student |
-  | `exec@mylaurier.ca` | `hawkmaps` | club exec (CS Club) |
+  | `demo1234@mylaurier.ca` | `hawkmaps` | student |
+  | `exec1234@mylaurier.ca` | `hawkmaps` | club exec (CS Club) |
 - **Without a backend** (no `EXPO_PUBLIC_API_BASE` set) — auth runs in local
-  demo mode: any Laurier email signs in, so the app still works in Expo Go.
-  Emails containing `exec` (e.g. `myexec@mylaurier.ca`) sign in as a CS Club
-  exec so the exec-only UI is testable offline.
+  demo mode: any **valid-format** Laurier email signs in, so the app still
+  works in Expo Go. Emails whose local part contains `exec` (e.g.
+  `exec1234@mylaurier.ca`) sign in as a CS Club exec so the exec-only UI is
+  testable offline.
 
 ### Account designations 🎓
 
@@ -174,17 +185,22 @@ There are two account designations:
    (the backend forces the event's club to the exec's club).
 
 To become a club exec you apply through the Google Form linked top-left on
-the Events page ("📝 Become a club exec"). The form URL is still TBD — paste
-it into `CLUB_EXEC_FORM_URL` in
-[`src/app/(tabs)/events.tsx`](<src/app/(tabs)/events.tsx>) when the club
-creates it; until then the button shows a "coming soon" notice. Exec status
-is then granted manually (set `role`/`club` on the user in
-[`backend/main.py`](backend/main.py) — no self-serve upgrade).
+the Events page ("📝 Become a club exec"). The form URL lives in
+`CLUB_EXEC_FORM_URL` in
+[`src/app/(tabs)/events.tsx`](<src/app/(tabs)/events.tsx>). Exec status
+is then granted manually — update the user's row in the SQLite database, e.g.:
+
+```bash
+sqlite3 backend/hawkmaps.db "UPDATE users SET role='club_exec', club='CS Club' WHERE email='abcd1234@mylaurier.ca'"
+```
+
+There is deliberately no self-serve upgrade.
 
 Auth state lives in [`src/hooks/use-auth.tsx`](src/hooks/use-auth.tsx); the
 route guards live in [`src/app/_layout.tsx`](src/app/_layout.tsx)
-(Expo Router `Stack.Protected`). Passwords are stored in-memory and unhashed —
-demo only. TODO: real database + hashing, then Laurier Microsoft Entra SSO.
+(Expo Router `Stack.Protected`). Accounts persist in SQLite with salted
+PBKDF2-hashed passwords ([`backend/database.py`](backend/database.py)).
+TODO: Laurier Microsoft Entra SSO.
 
 ### GoldenHawk AI 🐥
 

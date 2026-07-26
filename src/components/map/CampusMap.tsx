@@ -41,35 +41,49 @@ export default function CampusMap({
   const visible = locations.filter((l) => visibleTypes.has(l.type));
 
   // Build one JS statement per marker using a coloured CircleMarker + popup.
-  const markersJS = visible
-    .map((loc) => {
-      const cfg  = MAP_LAYER_CONFIG[loc.type];
-      const desc = loc.description ? `<p style='margin:4px 0 0;font-size:12px;color:#555'>${loc.description}</p>` : '';
-      const hrs  = loc.hours       ? `<p style='margin:4px 0 0;font-size:11px;color:#888'>🕐 ${loc.hours}</p>`      : '';
-      const acc  = loc.accessible  ? `<span style='font-size:11px'>♿ Accessible</span>`                             : '';
-      const popup = `
-        <div style='font-family:system-ui,sans-serif;min-width:160px'>
-          <strong style='font-size:14px'>${cfg.emoji} ${loc.name}</strong>
-          ${desc}${hrs}
-          <div style='margin-top:6px'>${acc}</div>
-        </div>`;
-      // CircleMarker is lightweight (no image request) and works offline.
-      return `
-        L.circleMarker([${loc.latitude}, ${loc.longitude}], {
-          radius: 10,
-          fillColor: '${cfg.color}',
-          color: '#fff',
-          weight: 2,
-          opacity: 1,
-          fillOpacity: 0.9,
-        })
-        .addTo(map)
-        .bindPopup(\`${popup.replace(/`/g, '\\`')}\`)
-        .on('click', function() {
-          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'marker', id: ${loc.id} }));
-        });`;
-    })
-    .join('\n');
+  const markersJS = visible.map((loc) => {
+  const cfg = MAP_LAYER_CONFIG[loc.type];
+
+  const desc = loc.description
+    ? `<p style="margin:4px 0 0;font-size:12px;color:#555">${loc.description}</p>`
+    : "";
+
+  const hrs = loc.hours
+    ? `<p style="margin:4px 0 0;font-size:11px;color:#888">🕐 ${loc.hours}</p>`
+    : "";
+
+  const acc = loc.accessible
+    ? `<span style="font-size:11px">♿ Accessible</span>`
+    : "";
+
+  const popup = `
+    <div style="font-family:system-ui,sans-serif;min-width:160px">
+      <strong style="font-size:14px">${cfg.emoji} ${loc.name}</strong>
+      ${desc}
+      ${hrs}
+      <div style="margin-top:6px">${acc}</div>
+    </div>
+  `;
+
+  return `
+L.marker([${loc.latitude}, ${loc.longitude}], {
+  icon: L.divIcon({
+    className: 'emoji-marker',
+    html: '<div class="emoji-badge" style="border-color:${cfg.color}">${cfg.emoji}</div>',
+    iconSize: [32, 32],
+    iconAnchor: [16, 16]
+  })
+})
+.addTo(map)
+.bindPopup(\`${popup.replace(/`/g, "\\`")}\`)
+.on('click', function () {
+  window.ReactNativeWebView.postMessage(JSON.stringify({
+    type: 'marker',
+    id: ${loc.id}
+  }));
+});
+`;
+}).join("\n");
 
   // In report mode, holding a touch still for ~550ms drops a temporary pin
   // and reports the coordinates back to React Native.
@@ -154,6 +168,28 @@ export default function CampusMap({
     #map { height: 100vh; }
     /* Make attribution smaller so it doesn't overlap controls */
     .leaflet-control-attribution { font-size: 9px !important; }
+    .emoji-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.emoji-badge {
+  width: 30px;
+  height: 30px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: white;
+
+  border-radius: 50%;
+  border: 3px solid;
+
+  box-shadow: 0 2px 6px rgba(0,0,0,.25);
+
+  font-size: 18px;
+}
     /* iOS (WKWebView) shows a native Copy/Look Up/Translate callout on any
        long-press by default, which steals the gesture before Leaflet's own
        long-press ('contextmenu') handler fires. Disabling text-selection and
@@ -220,3 +256,4 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   map:       { flex: 1 },
 });
+

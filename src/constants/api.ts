@@ -7,4 +7,8 @@
  * Use your machine's LAN IP, NOT localhost — a physical phone can't reach
  * localhost on your computer. If unset, screens fall back to local demo data.
  */
-export const API_BASE = process.env.EXPO_PUBLIC_API_BASE ?? '';
+
+import Constants from 'expo-constants';
+const host = Constants.expoConfig?.hostUri?.split(':')[0];
+
+export const API_BASE = process.env.EXPO_PUBLIC_API_BASE || `http://${host}:8000`;

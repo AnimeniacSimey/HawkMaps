@@ -16,12 +16,22 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { API_BASE } from '@/constants/api';
 
-// Laurier email domains accepted by HawkMaps.
-const LAURIER_DOMAINS = ['@mylaurier.ca', '@wlu.ca'];
+// Laurier emails are four letters followed by four digits, at @mylaurier.ca
+// or @wlu.ca (e.g. pera1234@mylaurier.ca). Enforced at BOTH sign-in and
+// signup — mirrored on the backend.
+export function isValidLaurierEmail(email: string): boolean {
+  return /^[a-z]{4}[0-9]{4}@(mylaurier\.ca|wlu\.ca)$/.test(email.trim().toLowerCase());
+}
 
-export function isLaurierEmail(email: string): boolean {
-  const lower = email.trim().toLowerCase();
-  return LAURIER_DOMAINS.some((d) => lower.endsWith(d)) && lower.indexOf('@') > 0;
+/** Error thrown by auth calls; `status` is the backend HTTP status when known.
+ *  A 404 from sign-in means the account doesn't exist — the login screen uses
+ *  that to offer "this account does not exist, sign up?". */
+export class AuthError extends Error {
+  status?: number;
+  constructor(message: string, status?: number) {
+    super(message);
+    this.status = status;
+  }
 }
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -66,8 +76,8 @@ function demoRole(email: string): { role: UserRole; club: string | null } {
     : { role: 'student', club: null };
 }
 
-/** POST to the backend and return the parsed body, throwing FastAPI's
- *  `detail` message on any non-2xx response so screens can show it. */
+/** POST to the backend and return the parsed body, throwing an AuthError
+ *  with FastAPI's `detail` message (and the HTTP status) on any non-2xx. */
 async function postJson(path: string, body: object): Promise<any> {
   const res = await fetch(`${API_BASE}${path}`, {
     method:  'POST',
@@ -75,7 +85,7 @@ async function postJson(path: string, body: object): Promise<any> {
     body:    JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail ?? 'Something went wrong — try again.');
+  if (!res.ok) throw new AuthError(data.detail ?? 'Something went wrong — try again.', res.status);
   return data;
 }
 
@@ -84,8 +94,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
 
   const signIn = async (email: string, password: string) => {
-    if (!isLaurierEmail(email)) {
-      throw new Error('Use your Laurier email (…@mylaurier.ca).');
+    if (!isValidLaurierEmail(email)) {
+      throw new Error('Must be a valid Laurier email');
     }
     if (!password) {
       throw new Error('Enter your password.');
@@ -103,8 +113,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signUp = async (name: string, email: string, password: string) => {
-    if (!isLaurierEmail(email)) {
-      throw new Error('Use your Laurier email (…@mylaurier.ca).');
+    // Email format: four letters + four digits (pera1234@mylaurier.ca).
+    if (!isValidLaurierEmail(email)) {
+      throw new Error('Must be a valid Laurier email');
     }
     if (password.length < 6) {
       throw new Error('Password must be at least 6 characters.');

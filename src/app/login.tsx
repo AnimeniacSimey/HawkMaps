@@ -7,7 +7,7 @@
  * switches to the (tabs) app, landing on the Map home tab.
  */
 
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -23,16 +23,31 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BRAND } from '@/constants/theme';
-import { useAuth } from '@/hooks/use-auth';
+import { AuthError, useAuth } from '@/hooks/use-auth';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { signIn } = useAuth();
 
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const [error,    setError]    = useState('');
   const [loading,  setLoading]  = useState(false);
+
+  // The account isn't in the database — offer to take the user to signup.
+  const promptSignUp = () => {
+    const msg = 'This account does not exist, sign up?';
+    if (Platform.OS === 'web') {
+      // Alert.alert is a no-op on react-native-web, so fall back there.
+      if (window.confirm(msg)) router.push('/signup');
+    } else {
+      Alert.alert('Account not found', msg, [
+        { text: 'Cancel',  style: 'cancel' },
+        { text: 'Sign up', onPress: () => router.push('/signup') },
+      ]);
+    }
+  };
 
   const handleSignIn = async () => {
     if (loading) return;
@@ -42,7 +57,11 @@ export default function LoginScreen() {
       await signIn(email, password);
       // Success — the root layout's auth guard swaps to (tabs) automatically.
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Sign in failed — try again.');
+      if (e instanceof AuthError && e.status === 404) {
+        promptSignUp();
+      } else {
+        setError(e instanceof Error ? e.message : 'Sign in failed — try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -71,7 +90,7 @@ export default function LoginScreen() {
             <Text style={styles.fieldLabel}>Username:</Text>
             <TextInput
               style={styles.fieldInput}
-              placeholder="you@mylaurier.ca"
+              placeholder="abcd1234@mylaurier.ca"
               placeholderTextColor="#9ca3af"
               value={email}
               onChangeText={setEmail}

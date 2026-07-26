@@ -75,7 +75,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52975,
     type: 'building',
     description: 'N/A',
-    hours: '7:00 am – 11:00 pm, 7 days',
+    hours: '7:00 am ï¿½ 11:00 pm, 7 days',
     accessible: true,
   },
 {
@@ -85,7 +85,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52647,
     type: 'building',
     description: 'N/A',
-    hours: '7:00 am – 11:00 pm, 7 days',
+    hours: '7:00 am ï¿½ 11:00 pm, 7 days',
     accessible: true,
   },
 {
@@ -105,7 +105,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52945,
     type: 'study',
     description: 'N/A',
-    hours: '7:00 am – 11:00 pm, 7 days',
+    hours: '7:00 am ï¿½ 11:00 pm, 7 days',
     accessible: true,
   },
 {
@@ -115,7 +115,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52942,
     type: 'building',
     description: 'N/A',
-    hours: '7:00 am – 11:00 pm, 7 days',
+    hours: '7:00 am ï¿½ 11:00 pm, 7 days',
     accessible: true,
   },
 {
@@ -125,7 +125,7 @@ export const locations: MapLocation[] = [
     longitude: -80.53055,
     type: 'building',
     description: 'N/A',
-    hours: '7:00 am – 11:00 pm, 7 days',
+    hours: '7:00 am ï¿½ 11:00 pm, 7 days',
     accessible: true,
   },
 {
@@ -135,7 +135,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52786,
     type: 'study',
     description: 'N/A',
-    hours: '7:00 am – 11:00 pm, 7 days',
+    hours: '7:00 am ï¿½ 11:00 pm, 7 days',
     accessible: true,
   },
 {
@@ -155,7 +155,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52947,
     type: 'building',
     description: 'N/A',
-    hours: '7:00 am – 11:00 pm, 7 days',
+    hours: '7:00 am ï¿½ 11:00 pm, 7 days',
     accessible: true,
   },
 {
@@ -175,7 +175,7 @@ export const locations: MapLocation[] = [
     longitude: -80.53032,
     type: 'building',
     description: 'N/A',
-    hours: '7:00 am – 11:00 pm, 7 days',
+    hours: '7:00 am ï¿½ 11:00 pm, 7 days',
     accessible: true,
   },
 {
@@ -185,7 +185,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52492,
     type: 'building',
     description: 'N/A',
-    hours: '7:00 am – 11:00 pm, 7 days',
+    hours: '7:00 am ï¿½ 11:00 pm, 7 days',
     accessible: true,
   },
 {
@@ -195,7 +195,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52599,
     type: 'study',
     description: 'N/A',
-    hours: '7:00 am – 11:00 pm, 7 days',
+    hours: '7:00 am ï¿½ 11:00 pm, 7 days',
     accessible: true,
   },
 {
@@ -205,7 +205,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52990,
     type: 'study',
     description: 'N/A',
-    hours: '8:30 am – 11:00 pm, Mon - Thurs|8:30 am – 5:00 pm, Fri|11:00 am – 5:00 pm, Sun',
+    hours: '8:30 am ï¿½ 11:00 pm, Mon - Thurs|8:30 am ï¿½ 5:00 pm, Fri|11:00 am ï¿½ 5:00 pm, Sun',
     accessible: true,
   },
 {
@@ -215,7 +215,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52873,
     type: 'building',
     description: 'N/A',
-    hours: '8:30 am – 4:30 pm, Mon - Fri',
+    hours: '8:30 am ï¿½ 4:30 pm, Mon - Fri',
     accessible: true,
   },
 {
@@ -225,7 +225,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52414,
     type: 'building',
     description: 'N/A',
-    hours: '8:30 am – 4:30 pm, Mon/Tue/Thu/Fri|8:30 am – 7:00 pm, Wed',
+    hours: '8:30 am ï¿½ 4:30 pm, Mon/Tue/Thu/Fri|8:30 am ï¿½ 7:00 pm, Wed',
     accessible: true,
   },
 {
@@ -235,7 +235,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52870,
     type: 'food',
     description: 'N/A',
-    hours: '7:00 am – 11:00 pm, 7 days',
+    hours: '7:00 am ï¿½ 11:00 pm, 7 days',
     accessible: true,
   },
 {
@@ -245,7 +245,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52799,
     type: 'building',
     description: 'N/A',
-    hours: '8:30 am – 4:30 pm, Mon - Fri',
+    hours: '8:30 am ï¿½ 4:30 pm, Mon - Fri',
     accessible: true,
   },
 {
@@ -255,7 +255,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52267,
     type: 'building',
     description: 'N/A',
-    hours: '7:30 am – 5:00 pm, Mon - Fri',
+    hours: '7:30 am ï¿½ 5:00 pm, Mon - Fri',
     accessible: true,
   },
 {
@@ -265,7 +265,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52358,
     type: 'building',
     description: 'N/A',
-    hours: '8:30 am – 4:30 pm, Mon - Fri',
+    hours: '8:30 am ï¿½ 4:30 pm, Mon - Fri',
     accessible: true,
   },
 {
@@ -275,7 +275,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52445,
     type: 'building',
     description: 'N/A',
-    hours: '7:00 am – 5:00 pm, Mon - Fri',
+    hours: '7:00 am ï¿½ 5:00 pm, Mon - Fri',
     accessible: true,
   },
 {
@@ -305,7 +305,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52914,
     type: 'food',
     description: 'N/A',
-    hours: '7:30 am – 7:00 pm, Mon - Thu|7:30 am – 5:00 pm, Fri|9:00 am – 5:00 pm, Sat - Sun',
+    hours: '7:30 am ï¿½ 7:00 pm, Mon - Thu|7:30 am ï¿½ 5:00 pm, Fri|9:00 am ï¿½ 5:00 pm, Sat - Sun',
     accessible: true,
   },
 {
@@ -325,7 +325,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52874,
     type: 'food',
     description: 'N/A',
-    hours: '7:30 am – 7:00 pm, Mon - Thu|7:30 am – 5:00 pm, Fri|Closed, Sat - Sun',
+    hours: '7:30 am ï¿½ 7:00 pm, Mon - Thu|7:30 am ï¿½ 5:00 pm, Fri|Closed, Sat - Sun',
     accessible: true,
   },
 {
@@ -335,7 +335,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52858,
     type: 'food',
     description: 'N/A',
-    hours: 'N/A, Mon-Thu|10:00 am – 8:00 pm, Fri-Sun',
+    hours: 'N/A, Mon-Thu|10:00 am ï¿½ 8:00 pm, Fri-Sun',
     accessible: true,
   },
 {
@@ -345,7 +345,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52882,
     type: 'food',
     description: 'N/A',
-    hours: 'N/A, Mon-Thu|11:00 am – 8:00 pm, Fri-Sun',
+    hours: 'N/A, Mon-Thu|11:00 am ï¿½ 8:00 pm, Fri-Sun',
     accessible: true,
   },
 {
@@ -355,7 +355,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52879,
     type: 'food',
     description: 'N/A',
-    hours: 'N/A, Mon-Thu|11:00 am – 8:00 pm, Fri-Sun',
+    hours: 'N/A, Mon-Thu|11:00 am ï¿½ 8:00 pm, Fri-Sun',
     accessible: true,
   },
 {
@@ -365,7 +365,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52873,
     type: 'food',
     description: 'N/A',
-    hours: 'N/A, Mon-Thu|11:00 am – 8:00 pm, Fri-Sun',
+    hours: 'N/A, Mon-Thu|11:00 am ï¿½ 8:00 pm, Fri-Sun',
     accessible: true,
   },
 {
@@ -415,7 +415,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52866,
     type: 'building',
     description: 'N/A',
-    hours: '8:00 am – 10:00 pm, Mon-Fri|N/A, Sat-Sun',
+    hours: '8:00 am ï¿½ 10:00 pm, Mon-Fri|N/A, Sat-Sun',
     accessible: true,
   },
 {
@@ -425,7 +425,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52931,
     type: 'building',
     description: 'N/A',
-    hours: 'N/A, Mon & Thu|N/A, Tue & Wed|9:00 am – 4:00 pm, Fri',
+    hours: 'N/A, Mon & Thu|N/A, Tue & Wed|9:00 am ï¿½ 4:00 pm, Fri',
     accessible: true,
   },
 {
@@ -435,7 +435,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52882,
     type: 'building',
     description: 'N/A',
-    hours: '9:00 am – 5:00 pm, Mon-Fri',
+    hours: '9:00 am ï¿½ 5:00 pm, Mon-Fri',
     accessible: true,
   },
 {
@@ -445,7 +445,7 @@ export const locations: MapLocation[] = [
     longitude: -80.52576,
     type: 'building',
     description: 'N/A',
-    hours: '6:00 am – 1:00 am, Mon - Thu|6:00 am – 10:00 pm, Fri|8:00 am – 10:00 pm, Sat|8:00 am – 1:00 am, Sun',
+    hours: '6:00 am ï¿½ 1:00 am, Mon - Thu|6:00 am ï¿½ 10:00 pm, Fri|8:00 am ï¿½ 10:00 pm, Sat|8:00 am ï¿½ 1:00 am, Sun',
     accessible: true,
   },
 ];

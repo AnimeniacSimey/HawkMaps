@@ -2,9 +2,17 @@
 Hawk Maps — FastAPI Backend
 CP317 · Wilfrid Laurier University
 
-Run:
-    pip install fastapi uvicorn python-jose[cryptography] passlib bcrypt python-dotenv
-    uvicorn main:app --reload --port 8000
+Run (either works):
+    pip install -r requirements.txt
+    python main.py
+    # or:
+    uvicorn main:app --reload --reload-exclude "*.json" --reload-exclude "*.db" --host 0.0.0.0 --port 8000
+
+IMPORTANT: goose_reports.json and hawkmaps.db both live in this same backend/
+folder, which --reload watches for changes. Without the --reload-exclude
+flags above (or running via `python main.py`, which sets them for you), every
+goose report or signup write gets misread as a code change and triggers a
+full server restart mid-request. Always exclude those two patterns.
 """
 
 from fastapi import FastAPI, HTTPException, Depends, status
@@ -12,8 +20,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
+import json
 
 try:
     from zoneinfo import ZoneInfo
@@ -34,20 +43,32 @@ try:
         CAMPUS = json.load(_cf)
 except Exception:  # pragma: no cover
     CAMPUS = {"buildings": [], "rooms": [], "floors": {}, "directory": [], "connections": []}
+import database as db
+
+# ── Dynamic Data Updaters ─────────────────────────────────────────────────
+try:
+    import update_locations
+except ImportError:
+    update_locations = None
+
+try:
+    import update_reviews
+except ImportError:
+    update_reviews = None
 
 
 app = FastAPI(title="Hawk Maps API", version="0.1.0")
 
-# ── CORS (allow React dev server) ─────────────────────────────────────────
+# ── CORS (allow React dev server / Expo) ──────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # dev/testing: allow the LAN web build + Expo Go
-    allow_credentials=False,      # no cookies are used, so "*" origins is fine
+    allow_origins=["*"],          # dev/testing: allow LAN web build + Expo Go
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ── Auth helpers (stubbed — wire to Laurier SSO / Microsoft Entra) ────────
+# ── Auth helpers ──────────────────────────────────────────────────────────
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 def create_access_token(data: dict, expires_delta: timedelta = timedelta(hours=8)):
@@ -59,11 +80,10 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     if not token.startswith("demo_token_"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     username = token.replace("demo_token_", "")
-    # Resolve the account so role/club survive into authed routes.
-    for email, u in USERS_DB.items():
-        if email.split("@")[0] == username:
-            return {"username": username, "email": email, "role": u.get("role", "student"), "club": u.get("club")}
-    return {"username": username, "email": f"{username}@mylaurier.ca", "role": "student", "club": None}
+    user = db.get_user_by_username(username)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account no longer exists")
+    return {"username": username, "email": user["email"], "role": user["role"], "club": user["club"]}
 
 # ── Models ────────────────────────────────────────────────────────────────
 class LoginRequest(BaseModel):
@@ -99,63 +119,140 @@ class GooseReport(BaseModel):
     severity: str  # "mild" | "aggressive"
     note: Optional[str] = None
 
+# ── Goose Sightings (File-based Persistence Setup) ────────────────────────
+GOOSE_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "goose_reports.json")
+
+def load_goose_reports() -> list[dict]:
+    """Load reports from the local JSON file so they persist across restarts."""
+    if os.path.exists(GOOSE_FILE_PATH):
+        try:
+            with open(GOOSE_FILE_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"[Goose DB] Error loading reports file: {e}")
+    # Default initial seed data
+    return [
+        {"id": 1, "lat": 43.4735, "lng": -80.5260, "severity": "aggressive", "note": "Near Alumni Hall", "reported_at": "2024-11-08T08:30"},
+        {"id": 2, "lat": 43.4730, "lng": -80.5270, "severity": "mild",       "note": "By library entrance", "reported_at": "2024-11-08T09:10"},
+    ]
+
+def save_goose_reports(reports: list[dict]) -> None:
+    """Save reports list locally to JSON file."""
+    try:
+        os.makedirs(os.path.dirname(GOOSE_FILE_PATH), exist_ok=True)
+        with open(GOOSE_FILE_PATH, "w", encoding="utf-8") as f:
+            json.dump(reports, f, indent=2)
+        print(f"[Goose DB] Successfully saved {len(reports)} reports to {GOOSE_FILE_PATH}")
+    except Exception as e:
+        print(f"[Goose DB] ERROR saving reports file: {e}")
+
+# Initialize in-memory DB from JSON file on import
+GOOSE_DB: list[dict] = load_goose_reports()
+
+# ── Startup Lifecycle Hook ────────────────────────────────────────────────
+@app.on_event("startup")
+def startup_event():
+    # Force creation/validation of goose_reports.json on server start
+    save_goose_reports(GOOSE_DB)
+    print(f"[Startup] goose_reports.json is ready at {GOOSE_FILE_PATH}")
+
+    # Trigger updaters if they possess refresh/init procedures
+    if update_locations and hasattr(update_locations, "refresh_locations"):
+        try:
+            update_locations.refresh_locations()
+            print("[Startup] Triggered update_locations.refresh_locations()")
+        except Exception as e:
+            print(f"[Startup] Failed running update_locations: {e}")
+
+    if update_reviews and hasattr(update_reviews, "refresh_reviews"):
+        try:
+            update_reviews.refresh_reviews()
+            print("[Startup] Triggered update_reviews.refresh_reviews()")
+        except Exception as e:
+            print(f"[Startup] Failed running update_reviews: {e}")
+
+# ── Helper Data Retrieval for Updaters ────────────────────────────────────
+def get_current_spaces() -> list[dict]:
+    """Fetch spaces from update_locations.getStudySpaceData() (backed by
+    study_spaces.csv) if available, else fall back to the static SPACES_DB demo data.
+
+    getStudySpaceData() returns rows shaped [name, busy_label, total_seats,
+    occupied_seats] (strings), not the {id, name, seats, fill_pct, type,
+    building} dicts the /api/spaces routes expect — so we convert here.
+
+    Note: study_spaces.csv doesn't track a room "type" (quiet/collaborative/
+    casual/etc) or a separate "building" field the way SPACES_DB does, so both
+    are approximated for now. Add those columns to the CSV/update_locations.py
+    later if per-type filtering on live data matters.
+    """
+    if update_locations and hasattr(update_locations, "getStudySpaceData"):
+        try:
+            rows = update_locations.getStudySpaceData()
+        except Exception as e:
+            print(f"[Spaces] Failed reading study_spaces.csv, using fallback: {e}")
+            return SPACES_DB
+
+        spaces = []
+        for i, row in enumerate(rows, start=1):
+            name, _busy_label, total_seats, occupied_seats = row
+            total = int(total_seats)
+            occupied = int(occupied_seats)
+            fill_pct = round((occupied / total) * 100) if total else 0
+            spaces.append({
+                "id": i,
+                "name": name,
+                "seats": total,
+                "fill_pct": fill_pct,
+                "type": "open",    # not tracked in study_spaces.csv yet
+                "building": name,  # ditto — csv has no separate building column
+            })
+        return spaces or SPACES_DB
+    return SPACES_DB
+
+def get_current_reviews() -> list[dict]:
+    """Fetch reviews from update_reviews if available, else fallback to REVIEWS_DB."""
+    if update_reviews:
+        for fn_name in ("get_reviews", "reviews"):
+            if hasattr(update_reviews, fn_name):
+                return getattr(update_reviews, fn_name)()
+    return REVIEWS_DB
+
 # ── Auth Routes ───────────────────────────────────────────────────────────
-LAURIER_DOMAINS = ("@mylaurier.ca", "@wlu.ca")
+LAURIER_EMAIL_RE = r"^[a-z]{4}[0-9]{4}@(mylaurier\.ca|wlu\.ca)$"
 
-def is_laurier_email(email: str) -> bool:
-    email = email.strip().lower()
-    return email.endswith(LAURIER_DOMAINS) and email.index("@") > 0
-
-# In-memory user store: email → {name, password, role, club}.
-# TODO: move to a real database and hash passwords (passlib/bcrypt).
-#
-# Account designations:
-#   "student"   — regular user (everyone who signs up)
-#   "club_exec" — can create events for their own club (and only that club).
-#                 Granted manually after applying through the Google Form
-#                 linked on the Events page — there is no self-serve upgrade.
-#
-# Seeded with demo accounts so the team can sign in without registering.
-USERS_DB: dict[str, dict] = {
-    "demo@mylaurier.ca": {"name": "Demo Hawk", "password": "hawkmaps", "role": "student",   "club": None},
-    "exec@mylaurier.ca": {"name": "Casey Exec", "password": "hawkmaps", "role": "club_exec", "club": "CS Club"},
-}
+def is_valid_laurier_email(email: str) -> bool:
+    import re
+    return re.fullmatch(LAURIER_EMAIL_RE, email.strip().lower()) is not None
 
 @app.post("/api/auth/signup", status_code=201)
 def signup(req: SignupRequest):
-    """Create an account with a Laurier email, then sign the user in."""
     email = req.email.strip().lower()
-    if not is_laurier_email(email):
-        raise HTTPException(status_code=400, detail="Use your Laurier email (…@mylaurier.ca)")
+    if not is_valid_laurier_email(email):
+        raise HTTPException(status_code=400, detail="Must be a valid Laurier email")
     if len(req.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-    if email in USERS_DB:
+    if db.get_user(email) is not None:
         raise HTTPException(status_code=409, detail="An account with this email already exists — sign in instead")
-    # Everyone signs up as a regular student. Club-exec status is granted
-    # manually after applying via the Google Form on the Events page.
-    USERS_DB[email] = {"name": req.name.strip(), "password": req.password, "role": "student", "club": None}
+    db.create_user(email, req.name.strip(), req.password, role="student")
     token = create_access_token({"sub": email.split("@")[0]})
     return {"access_token": token, "token_type": "bearer", "role": "student", "club": None}
 
 @app.post("/api/auth/login")
 def login(req: LoginRequest):
-    """
-    Authenticate with Laurier email + password.
-    TODO: Replace stub with Laurier Microsoft Entra SSO (OAuth2 PKCE flow).
-    """
     email = req.email.strip().lower()
-    if not is_laurier_email(email):
-        raise HTTPException(status_code=400, detail="Use your Laurier email (…@mylaurier.ca)")
-    user = USERS_DB.get(email)
-    if user is None or user["password"] != req.password:
+    if not is_valid_laurier_email(email):
+        raise HTTPException(status_code=400, detail="Must be a valid Laurier email")
+    user = db.get_user(email)
+    if user is None:
+        raise HTTPException(status_code=404, detail="This account does not exist")
+    if not db.verify_password(email, req.password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     token = create_access_token({"sub": email.split("@")[0]})
     return {"access_token": token, "token_type": "bearer",
-            "role": user.get("role", "student"), "club": user.get("club")}
+            "role": user["role"], "club": user["club"]}
 
 @app.get("/api/auth/sso")
 def sso_redirect():
-    """Redirect to Microsoft OAuth — replace URL with your Azure App Registration."""
     sso_url = os.getenv("MICROSOFT_SSO_URL", "https://login.microsoftonline.com/YOUR_TENANT/oauth2/v2.0/authorize")
     return {"redirect_url": sso_url}
 
@@ -173,6 +270,46 @@ EVENTS_DB: list[dict] = [
     {"id": 5, "title": "Career Fair 2024",   "location": "Athletic Complex","start": "2024-11-15T10:00","club": None,          "tags": ["Career", "Free"]},
 ]
 
+BLOCKED_TERMS = [
+    "fuck", "fucking", "fucker", "motherfucker", "shit", "bullshit", "shitty",
+    "shithead", "bitch", "bitchy", "asshole", "ass", "dumbass", "jackass",
+    "dick", "dickhead", "cock", "pussy", "cunt", "bastard", "slut", "whore",
+    "tits", "boobs", "blowjob", "handjob", "orgy", "porn", "hentai", "faggot",
+    "fag", "nigger", "nigga", "retard", "retarded", "rape", "raping", "rapist",
+    "nazi", "hitler", "kkk", "kys", "kill yourself", "molest",
+]
+
+_LEET_MAP = str.maketrans({
+    "@": "a", "4": "a", "3": "e", "1": "i", "!": "i", "0": "o",
+    "$": "s", "5": "s", "7": "t", ".": "", "-": "", "_": "",
+})
+
+def contains_inappropriate(text: str) -> Optional[str]:
+    import re
+    normalized = text.lower().translate(_LEET_MAP)
+    for term in BLOCKED_TERMS:
+        letters = term.replace(" ", "")
+        pattern = r"\b" + r"\s*".join(f"[{re.escape(c)}*#]" for c in letters) + r"s?\b"
+        if re.search(pattern, normalized):
+            return term
+    return None
+
+def validate_event_input(title: str, location: str, description: str) -> None:
+    if len(title) < 3:
+        raise HTTPException(status_code=400, detail="Title must be at least 3 characters")
+    if len(title) > 80:
+        raise HTTPException(status_code=400, detail="Title must be 80 characters or fewer")
+    if len(location) > 60:
+        raise HTTPException(status_code=400, detail="Location must be 60 characters or fewer")
+    if len(description) > 500:
+        raise HTTPException(status_code=400, detail="Description must be 500 characters or fewer")
+    for label, value in (("title", title), ("location", location), ("description", description)):
+        if value and contains_inappropriate(value):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Please keep the {label} appropriate for a university club event",
+            )
+
 @app.get("/api/events")
 def list_events(search: Optional[str] = None, tag: Optional[str] = None):
     results = EVENTS_DB
@@ -184,19 +321,26 @@ def list_events(search: Optional[str] = None, tag: Optional[str] = None):
 
 @app.post("/api/events", status_code=201)
 def create_event(ev: EventCreate, user=Depends(get_current_user)):
-    """Club executives can POST new events — always for their OWN club.
-
-    Regular students get a 403 pointing them at the exec application form.
-    The event's club comes from the exec's account, never from the request,
-    so an exec can't post on another club's behalf.
-    """
     if user["role"] != "club_exec":
         raise HTTPException(
             status_code=403,
             detail="Only club executives can create events — apply via the form on the Events page",
         )
-    data = ev.dict()
-    data["club"] = user["club"]  # force the exec's own club
+    data = ev.model_dump() if hasattr(ev, "model_dump") else ev.dict()
+    data["title"] = data["title"].strip()
+    data["location"] = data["location"].strip()
+    data["description"] = data["description"].strip()
+    validate_event_input(data["title"], data["location"], data["description"])
+
+    try:
+        start_dt = datetime.fromisoformat(data["start_time"])
+        end_dt = datetime.fromisoformat(data["end_time"])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Times must be ISO format, e.g. 2026-11-08T14:00")
+    if end_dt <= start_dt:
+        raise HTTPException(status_code=400, detail="The event must end after it starts")
+
+    data["club"] = user["club"]
     new_ev = {
         "id": len(EVENTS_DB) + 1,
         "title":       data["title"],
@@ -207,7 +351,7 @@ def create_event(ev: EventCreate, user=Depends(get_current_user)):
         "club":        data["club"],
         "tags":        ["Club"],
         "created_by":  user["username"],
-        "created_at":  datetime.utcnow().isoformat(),
+        "created_at":  datetime.now(timezone.utc).isoformat(),
     }
     EVENTS_DB.append(new_ev)
     return new_ev
@@ -219,7 +363,12 @@ def get_event(event_id: int):
         raise HTTPException(status_code=404, detail="Event not found")
     return ev
 
-# ── Study Spaces Routes ───────────────────────────────────────────────────
+@app.get("/status")
+async def status():
+    print("Someone requested /status")
+    return {"ok": True}
+
+# ── Study Spaces Routes (Dynamic) ─────────────────────────────────────────
 SPACES_DB = [
     {"id": 1, "name": "Peters Library — 2nd Floor",   "seats": 36,  "fill_pct": 40, "type": "quiet",        "building": "Peters Library"},
     {"id": 2, "name": "BA Building — Study Room 3",   "seats": 8,   "fill_pct": 72, "type": "collaborative", "building": "BA Building"},
@@ -257,17 +406,33 @@ def is_open_now(open_str: str, close_str: str, now_minutes: int) -> Optional[boo
 
 @app.get("/api/spaces")
 def list_spaces(type: Optional[str] = None):
-    spaces = [{"status": fill_to_status(s["fill_pct"]), **s} for s in SPACES_DB]
+    raw_spaces = get_current_spaces()
+    spaces = [{"status": fill_to_status(s["fill_pct"]), **s} for s in raw_spaces]
     if type:
         spaces = [s for s in spaces if s["type"] == type]
     return spaces
 
+@app.get("/api/spaces/available")
+def get_available_spaces():
+    """Returns spaces that are not full (fill_pct < 90)."""
+    raw_spaces = get_current_spaces()
+    spaces = [{"status": fill_to_status(s["fill_pct"]), **s} for s in raw_spaces]
+    return [s for s in spaces if s["fill_pct"] < 90]
+
+@app.get("/api/spaces/search")
+def search_spaces(q: str = ""):
+    """Case-insensitive search over study space names and buildings ("Find a space")."""
+    query = q.strip().lower()
+    raw_spaces = get_current_spaces()
+    spaces = [{"status": fill_to_status(s["fill_pct"]), **s} for s in raw_spaces]
+    if not query:
+        return spaces
+    return [
+        s for s in spaces 
+        if query in s.get("name", "").lower() or query in s.get("building", "").lower()
+    ]
+
 # ── Campus Map / Buildings ────────────────────────────────────────────────
-# Wilfrid Laurier University — Waterloo campus. Names, codes and COORDINATES from
-# Laurier's official Concept3D campus map (map.concept3d.com id=638); hours from
-# wlu.ca's building-hours schedule (verified July 2026). The full 65-building set
-# and indoor-route graph live in the app at src/data/campus.ts; this is the core
-# subset the LLM reasons over. "connected" marks the indoor Concourse-linked core.
 _ACC = "Accessible entrance available — see Laurier's accessibility map"
 BUILDINGS_DB = [
     {"id":1,  "name":"Science Building",                "code":"N",    "street":"75 University Ave W", "connected":True,  "lat":43.47355,"lng":-80.5248,  "contains":"Faculty of Science labs and lecture halls; atrium study space", "accessible_entrance":_ACC},
@@ -284,8 +449,6 @@ BUILDINGS_DB = [
     {"id":12, "name":"Savvas Chamberlain Music Building","code":"M",  "street":"75 University Ave W", "connected":True,  "lat":43.47473,"lng":-80.52784, "contains":"the Faculty of Music, practice studios and study rooms", "accessible_entrance":_ACC},
 ]
 
-# Building hours by id. Academic buildings are open 7am-11pm daily per wlu.ca;
-# Library/Dining/Athletics vary. TODO: pull live from Laurier's data source.
 BUILDING_HOURS = {
     1:  {"open": "07:00", "close": "23:00"},
     2:  {"open": "07:00", "close": "23:00"},
@@ -307,42 +470,32 @@ def list_buildings():
 
 @app.get("/api/buildings/{building_id}/hours")
 def building_hours(building_id: int):
-    """Returns today's hours. TODO: pull from live Laurier data source."""
     return BUILDING_HOURS.get(building_id, {"open": "N/A", "close": "N/A"})
 
-# ── Goose Sightings ───────────────────────────────────────────────────────
-GOOSE_DB: list[dict] = [
-    {"id":1, "lat":43.4735,"lng":-80.5260, "severity":"aggressive", "note":"Near Alumni Hall", "reported_at":"2024-11-08T08:30"},
-    {"id":2, "lat":43.4730,"lng":-80.5270, "severity":"mild",       "note":"By library entrance", "reported_at":"2024-11-08T09:10"},
-]
-
+# ── Goose Sightings Routes ────────────────────────────────────────────────
 @app.get("/api/goose")
 def list_goose_reports():
     return GOOSE_DB
 
 @app.post("/api/goose", status_code=201)
 def report_goose(report: GooseReport):
-    """
-    Self-report a goose sighting from the map (long-press a spot to drop a pin).
-
-    No auth required for Sprint 1, same as /api/ai/chat, so the report flow
-    works before Laurier SSO is wired in. Revisit once get_current_user is
-    live to tag reports with the reporting student (reported_by).
-    """
     if report.severity not in ("mild", "aggressive"):
         raise HTTPException(status_code=400, detail="severity must be 'mild' or 'aggressive'")
-    new_r = {"id": len(GOOSE_DB) + 1, **report.dict(), "reported_at": datetime.utcnow().isoformat()}
+    
+    report_dict = report.model_dump() if hasattr(report, "model_dump") else report.dict()
+    
+    new_r = {
+        "id": len(GOOSE_DB) + 1,
+        **report_dict,
+        "reported_at": datetime.now(timezone.utc).isoformat()
+    }
     GOOSE_DB.append(new_r)
+    
+    # Write updated array straight to JSON file
+    save_goose_reports(GOOSE_DB)
     return new_r
 
-# ── Indoor routes, lecture halls & closures (powers GoldenHawk AI-01) ──────
-# Indoor / covered connections between buildings — the data GoldenHawk needs to
-# suggest the fastest *indoor* route and keep students out of the rain.
-# The core academic buildings are linked indoors through the CONCOURSE (at Arts
-# E / Fred Nichols Campus Centre). We model that hub: each core building connects
-# to the Concourse (Fred Nichols). Lazaridis Hall (across University Ave), the
-# Athletic Complex and residences are OUTDOOR walks — no indoor connection.
-# Times are estimates; Laurier publishes no official tunnel map.
+# ── Indoor routes, lecture halls & closures ─────────────────────────────────
 INDOOR_CONNECTIONS = [
     {"id": 1, "from": "Arts Building",             "to": "Fred Nichols Campus Centre", "type": "indoor link through the Concourse", "minutes": 1, "covered": True, "note": "The Concourse sits at the Arts E end."},
     {"id": 2, "from": "Bricker Academic Building", "to": "Science Building",            "type": "indoor link", "minutes": 2, "covered": True, "note": "Bricker Academic connects directly to the Science Building."},
@@ -355,8 +508,6 @@ INDOOR_CONNECTIONS = [
     {"id": 9, "from": "Savvas Chamberlain Music Building", "to": "Dining Hall (Paul Martin Centre)", "type": "indoor link", "minutes": 1, "covered": True, "note": "Indoors toward the Music Building."},
 ]
 
-# Where notable lecture halls / classrooms live, so GoldenHawk can resolve a
-# student's "my lecture hall" to a building and route them there.
 LECTURE_HALLS = [
     {"room": "BA 202",        "building": "Bricker Academic Building",  "note": "Large lecture theatre in Bricker Academic."},
     {"room": "N1001",         "building": "Science Building",           "note": "Ground-floor Science Building lecture hall."},
@@ -365,7 +516,6 @@ LECTURE_HALLS = [
     {"room": "P2027",         "building": "Frank C. Peters Building",   "note": "Classroom in the Peters Building."},
 ]
 
-# Temporary closures / construction the AI should route around.
 CLOSURES_DB: list[dict] = []
 
 @app.get("/api/indoor-routes")
@@ -380,24 +530,38 @@ def list_lecture_halls():
 def list_closures():
     return CLOSURES_DB
 
-# ── Reviews ───────────────────────────────────────────────────────────────
+# ── Reviews Routes (Dynamic) ──────────────────────────────────────────────
 REVIEWS_DB: list[dict] = []
 
 @app.get("/api/reviews")
 def list_reviews(target_id: Optional[str] = None, target_type: Optional[str] = None):
-    results = REVIEWS_DB
+    results = get_current_reviews()
     if target_id:
-        results = [r for r in results if r["target_id"] == target_id]
+        results = [r for r in results if str(r.get("target_id")) == str(target_id)]
     if target_type:
-        results = [r for r in results if r["target_type"] == target_type]
+        results = [r for r in results if r.get("target_type") == target_type]
     return results
 
 @app.post("/api/reviews", status_code=201)
 def create_review(review: ReviewCreate, user=Depends(get_current_user)):
     if not 1 <= review.rating <= 5:
         raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
-    new_r = {"id": len(REVIEWS_DB)+1, **review.dict(), "author": user["username"], "created_at": datetime.utcnow().isoformat()}
-    REVIEWS_DB.append(new_r)
+    
+    review_dict = review.model_dump() if hasattr(review, "model_dump") else review.dict()
+    current_reviews = get_current_reviews()
+    
+    new_r = {
+        "id": len(current_reviews) + 1,
+        **review_dict,
+        "author": user["username"],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    if update_reviews and hasattr(update_reviews, "add_review"):
+        update_reviews.add_review(new_r)
+    else:
+        REVIEWS_DB.append(new_r)
+        
     return new_r
 
 # ── GoldenHawk AI Chat ────────────────────────────────────────────────────
@@ -406,6 +570,7 @@ def build_campus_context() -> str:
     building, nickname, room, floor and department the on-device engine does."""
     now = datetime.now(CAMPUS_TZ) if CAMPUS_TZ else datetime.now()
     nm = now.hour * 60 + now.minute
+    now = datetime.now(CAMPUS_TZ) if CAMPUS_TZ else datetime.now()
 
     lines: list[str] = ["Wilfrid Laurier University — Waterloo Campus", ""]
     lines.append(
@@ -468,15 +633,38 @@ def build_campus_context() -> str:
             f'- {s["name"]} in {s["building"]} — {s["fill_pct"]}% full '
             f'({fill_to_status(s["fill_pct"])}), {s["type"]}, {s["seats"]} seats'
         )
+    for b in BUILDINGS_DB:
+        h = BUILDING_HOURS.get(b["id"], {})
+        open_s, close_s = h.get("open", "N/A"), h.get("close", "N/A")
+        core = "[core] " if b.get("connected") else "[outdoor walk] "
+        code = f' ({b["code"]})' if b.get("code") else ""
+        lines.append(
+            f'- {core}{b["name"]}{code} — {b.get("street", "")}. {b.get("contains", "")}. '
+            f'(hours {open_s}–{close_s}). Accessible: {b["accessible_entrance"]}.'
+        )
 
     lines.append("")
-    lines.append("CAMPUS EVENTS:")
-    for e in EVENTS_DB:
-        club = f' by {e["club"]}' if e.get("club") else ""
-        lines.append(f'- {e["title"]}{club} — {e["location"]}, {e["start"]}')
+    lines.append("LECTURE HALLS:")
+    for r in LECTURE_HALLS:
+        lines.append(f'- {r["room"]} is in {r["building"]} — {r["note"]}')
 
     lines.append("")
-    lines.append("GOOSE SIGHTINGS (user-reported):")
+    lines.append("INDOOR / COVERED ROUTES:")
+    for c in INDOOR_CONNECTIONS:
+        lines.append(
+            f'- {c["from"]} ↔ {c["to"]} via {c["type"]}, ~{c["minutes"]} min. {c["note"]}'
+        )
+
+    lines.append("")
+    lines.append("STUDY SPACES:")
+    for s in get_current_spaces():
+        lines.append(
+            f'- {s["name"]} in {s["building"]} — {s.get("fill_pct", 0)}% full '
+            f'({fill_to_status(s.get("fill_pct", 0))}), {s.get("type", "open")}, {s.get("seats", 0)} seats'
+        )
+
+    lines.append("")
+    lines.append("GOOSE SIGHTINGS:")
     for g in GOOSE_DB:
         lines.append(f'- {g["severity"]} sighting: {g.get("note", "")}')
 
@@ -485,16 +673,6 @@ def build_campus_context() -> str:
 
 @app.post("/api/ai/chat")
 def ai_chat(req: ChatRequest):
-    """
-    GoldenHawk AI endpoint.
-
-    Sends the student's message + recent history to Claude with live campus
-    data injected as context. Falls back to keyword rules when no API key is
-    configured or the model is unreachable (see backend/goldenhawk.py).
-
-    No auth required for Sprint 1 so the chat tab works in the demo; later
-    sprints can gate this behind Laurier SSO and personalize per student.
-    """
     reply, source = goldenhawk.get_reply(
         message=req.message,
         history=req.history,
@@ -511,3 +689,20 @@ def health():
         "version": "0.1.0",
         "goldenhawk_ai": "connected" if goldenhawk.ai_available() else "fallback (no API key)",
     }
+
+# ── Dev entrypoint ────────────────────────────────────────────────────────
+# `python main.py` is the recommended way to run this locally — it bakes in
+# the --reload-exclude flags so writing goose_reports.json or hawkmaps.db
+# never gets mistaken for a code change and restarts the server mid-request.
+# (If you prefer the `uvicorn` CLI directly, just pass the same two
+# --reload-exclude flags shown in the module docstring above.)
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        reload_excludes=["*.json", "*.db"],
+    )

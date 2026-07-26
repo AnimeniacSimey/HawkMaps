@@ -70,7 +70,7 @@ export default function SignupScreen() {
         </View>
 
         <Text style={styles.title}>Create your account</Text>
-        <Text style={styles.subtitle}>Use your Laurier email to join HawkMaps</Text>
+        <Text style={styles.subtitle}>Use your Laurier student email (abcd1234@mylaurier.ca)</Text>
 
         {/* Fields */}
         <View style={styles.form}>
@@ -91,7 +91,7 @@ export default function SignupScreen() {
             <Text style={styles.fieldLabel}>Email:</Text>
             <TextInput
               style={styles.fieldInput}
-              placeholder="you@mylaurier.ca"
+              placeholder="abcd1234@mylaurier.ca"
               placeholderTextColor="#9ca3af"
               value={email}
               onChangeText={setEmail}

@@ -17,6 +17,7 @@
 import { API_BASE } from '@/constants/api';
 import { BRAND } from '@/constants/theme';
 import { useAuth } from '@/hooks/use-auth';
+import { validateEventInput } from '@/utils/moderation';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -42,14 +43,17 @@ const CLUB_EXEC_FORM_URL = 'https://forms.gle/gsEhmKNq9cs1ie9X6';
 
 // ── Data ────────────────────────────────────────────────────────────────
 type Event = {
-  id:       number;
-  emoji:    string;
-  title:    string;
-  date:     string;      // display string, e.g. "Nov 8"
-  location: string;
-  tags:     string[];
-  bg:       string;
-  club?:    string | null;
+  id:          number;
+  emoji:       string;
+  title:       string;
+  date:        string;      // display string, e.g. "Nov 8"
+  location:    string;
+  tags:        string[];
+  bg:          string;
+  club?:       string | null;
+  description?: string;
+  startIso?:   string;      // e.g. "2026-11-08T14:00" (when known)
+  endIso?:     string;
 };
 
 const DEMO_EVENTS: Event[] = [
@@ -77,17 +81,30 @@ function formatDate(iso: string): string {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
 
+/** "2026-11-08T14:00" → "2:00 PM" (empty string if unparseable). */
+function formatTime(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const h = d.getHours() % 12 || 12;
+  const m = String(d.getMinutes()).padStart(2, '0');
+  return `${h}:${m} ${d.getHours() < 12 ? 'AM' : 'PM'}`;
+}
+
 function apiToEvent(e: any): Event {
   const tags: string[] = e.tags ?? [];
   return {
-    id:       e.id,
-    emoji:    TAG_EMOJI[tags[0]] ?? '🎉',
-    title:    e.title,
-    date:     formatDate(e.start ?? ''),
-    location: e.location,
+    id:          e.id,
+    emoji:       TAG_EMOJI[tags[0]] ?? '🎉',
+    title:       e.title,
+    date:        formatDate(e.start ?? ''),
+    location:    e.location,
     tags,
-    bg:       CARD_COLORS[e.id % CARD_COLORS.length],
-    club:     e.club,
+    bg:          CARD_COLORS[e.id % CARD_COLORS.length],
+    club:        e.club,
+    description: e.description,
+    startIso:    e.start,
+    endIso:      e.end,
   };
 }
 
@@ -98,6 +115,7 @@ export default function EventsScreen() {
   const [query,  setQuery]  = useState('');
   const [events, setEvents] = useState<Event[]>(DEMO_EVENTS);
   const [showCreate, setShowCreate] = useState(false);
+  const [selected,   setSelected]   = useState<Event | null>(null);
 
   const isExec = session?.role === 'club_exec';
 
@@ -178,8 +196,13 @@ export default function EventsScreen() {
         ListEmptyComponent={
           <Text style={styles.empty}>No events match "{query}"</Text>
         }
-        renderItem={({ item }) => <EventCard event={item} />}
+        renderItem={({ item }) => (
+          <EventCard event={item} onPress={() => setSelected(item)} />
+        )}
       />
+
+      {/* Event details — opens when a card is tapped */}
+      <EventDetailsModal event={selected} onClose={() => setSelected(null)} />
 
       {/* Exec-only: create an event for their club */}
       {isExec && (
@@ -242,9 +265,9 @@ function addToGoogleCalendar(event: Event) {
   Linking.openURL(url);
 }
 
-function EventCard({ event }: { event: Event }) {
+function EventCard({ event, onPress }: { event: Event; onPress: () => void }) {
   return (
-    <View style={styles.card}>
+    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
       <View style={[styles.cardBanner, { backgroundColor: event.bg }]}>
         <Text style={styles.cardEmoji}>{event.emoji}</Text>
       </View>
@@ -267,7 +290,61 @@ function EventCard({ event }: { event: Event }) {
       >
         <Text style={styles.addBtnText}>+ Add</Text>
       </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
+  );
+}
+
+// ── Event details modal (opens when a card is tapped) ────────────────────
+function EventDetailsModal({ event, onClose }: { event: Event | null; onClose: () => void }) {
+  if (!event) return null;
+
+  const startTime = formatTime(event.startIso);
+  const endTime   = formatTime(event.endIso);
+  const timeRange = startTime ? (endTime ? `${startTime} – ${endTime}` : startTime) : '';
+
+  return (
+    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+      <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} style={styles.detailSheet} onPress={() => {}}>
+          {/* Banner */}
+          <View style={[styles.detailBanner, { backgroundColor: event.bg }]}>
+            <Text style={styles.detailEmoji}>{event.emoji}</Text>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.detailBody}>
+            <Text style={styles.detailTitle}>{event.title}</Text>
+            {!!event.club && <Text style={styles.detailClub}>Hosted by {event.club}</Text>}
+
+            <View style={styles.detailInfoBlock}>
+              <Text style={styles.detailInfoRow}>📅  {event.date}{timeRange ? `  ·  ${timeRange}` : ''}</Text>
+              <Text style={styles.detailInfoRow}>📍  {event.location}</Text>
+            </View>
+
+            {event.tags.length > 0 && (
+              <View style={styles.tagRow}>
+                {event.tags.map((tag) => (
+                  <View key={tag} style={styles.tag}>
+                    <Text style={styles.tagText}>{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <Text style={styles.detailDescription}>
+              {event.description?.trim() ||
+                'No description yet — check with the club for details.'}
+            </Text>
+
+            <TouchableOpacity style={styles.detailCalendarBtn} onPress={() => addToGoogleCalendar(event)}>
+              <Text style={styles.detailCalendarText}>+ Add to Google Calendar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onClose}>
+              <Text style={styles.modalCancel}>Close</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
   );
 }
 
@@ -306,10 +383,20 @@ function CreateEventModal({
       setError('Title, location, and date are required.');
       return;
     }
+    // Length limits + profanity/appropriateness check (mirrored on the backend).
+    const invalid = validateEventInput({ title, location, description: desc });
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
     const startIso = `${date.trim()}T${start.trim() || '12:00'}`;
     const endIso   = `${date.trim()}T${end.trim()   || '13:00'}`;
-    if (isNaN(new Date(startIso).getTime())) {
+    if (isNaN(new Date(startIso).getTime()) || isNaN(new Date(endIso).getTime())) {
       setError('Date must look like 2026-11-08 (and times like 14:30).');
+      return;
+    }
+    if (new Date(endIso) <= new Date(startIso)) {
+      setError('The event must end after it starts.');
       return;
     }
     setLoading(true);
@@ -317,14 +404,17 @@ function CreateEventModal({
       if (!API_BASE) {
         // Demo mode — add locally so the flow is testable offline.
         onCreated({
-          id:       Date.now(),
-          emoji:    '🎪',
-          title:    title.trim(),
-          date:     formatDate(startIso),
-          location: location.trim(),
-          tags:     ['Club'],
-          bg:       CARD_COLORS[Date.now() % CARD_COLORS.length],
+          id:          Date.now(),
+          emoji:       '🎪',
+          title:       title.trim(),
+          date:        formatDate(startIso),
+          location:    location.trim(),
+          tags:        ['Club'],
+          bg:          CARD_COLORS[Date.now() % CARD_COLORS.length],
           club,
+          description: desc.trim(),
+          startIso,
+          endIso,
         });
         reset();
         return;
@@ -435,6 +525,18 @@ const styles = StyleSheet.create({
 
   addBtn:      { backgroundColor: BRAND.purple, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6, marginRight: 12 },
   addBtnText:  { fontSize: 11, fontWeight: '700', color: '#fff' },
+
+  detailSheet:       { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden', maxHeight: '85%' },
+  detailBanner:      { height: 110, alignItems: 'center', justifyContent: 'center' },
+  detailEmoji:       { fontSize: 52 },
+  detailBody:        { padding: 20, gap: 12 },
+  detailTitle:       { fontSize: 20, fontWeight: '800', color: BRAND.dark },
+  detailClub:        { fontSize: 13, fontWeight: '600', color: BRAND.purpleDark, marginTop: -6 },
+  detailInfoBlock:   { backgroundColor: '#f5f5f5', borderRadius: 10, padding: 12, gap: 6 },
+  detailInfoRow:     { fontSize: 13, color: '#1a1a1a' },
+  detailDescription: { fontSize: 14, color: '#374151', lineHeight: 21 },
+  detailCalendarBtn: { backgroundColor: BRAND.purple, borderRadius: 10, paddingVertical: 13, alignItems: 'center', marginTop: 4 },
+  detailCalendarText:{ fontSize: 14, fontWeight: '700', letterSpacing: 0.5, color: '#fff' },
 
   modalBackdrop:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   modalSheet:     { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '85%' },

@@ -1,9 +1,6 @@
 Campus Locations & Coordinates (Condensed Format)				
 				
 Building	Title	Rating	Body	Date
-Dining Hall	Good	5	"Great food, enjoyable atmosphere!"	07/07/2026
-Dining Hall	Okay	3	"Food was okay, service could use improvement."	08/07/2026
-Dining Hall	Poor	1	Incorrect order with late service.	09/07/2026
 Byte 75 Coffee & Social	Good	5	"Great food, enjoyable atmosphere!"	07/07/2026
 Byte 75 Coffee & Social	Okay	3	"Food was okay, service could use improvement."	08/07/2026
 Byte 75 Coffee & Social	Poor	1	Incorrect order with late service.	09/07/2026
@@ -40,3 +37,6 @@ Tim Hortons	Poor	1	Incorrect order with late service.	09/07/2026
 Wilf's Restaurant & Bar	Good	5	"Great food, enjoyable atmosphere!"	07/07/2026
 Wilf's Restaurant & Bar	Okay	3	"Food was okay, service could use improvement."	08/07/2026
 Wilf's Restaurant & Bar	Poor	1	Incorrect order with late service.	09/07/2026
+				
+				
+				
