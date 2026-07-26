@@ -21,16 +21,26 @@ try:
 except Exception:  # pragma: no cover - tzdata missing; fall back to server local time
     CAMPUS_TZ = None
 
-import goldenhawk
+# `goldenhawk` is a local module (backend/goldenhawk.py), NOT a pip package.
+# Put this file's own directory on the import path so `import goldenhawk` and
+# campus.json resolve no matter which directory the server is launched from
+# (repo root, backend/, or imported as backend.main). No pip install needed.
+import sys
 import json
 import pathlib
+
+_HERE = pathlib.Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
+import goldenhawk  # noqa: E402 — must come after the sys.path setup above
 
 # Full campus dataset, exported from the app's src/data/campus.ts so the LIVE
 # (LLM) path shares the SAME 65 buildings, nicknames, rooms, floors and
 # departments the on-device engine uses. Regenerate campus.json when campus.ts
 # changes (see scripts/export-campus). This is what fixes "willy"/"mac" etc.
 try:
-    with open(pathlib.Path(__file__).parent / "campus.json", encoding="utf-8") as _cf:
+    with open(_HERE / "campus.json", encoding="utf-8") as _cf:
         CAMPUS = json.load(_cf)
 except Exception:  # pragma: no cover
     CAMPUS = {"buildings": [], "rooms": [], "floors": {}, "directory": [], "connections": []}
