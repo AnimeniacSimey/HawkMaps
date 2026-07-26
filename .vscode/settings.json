@@ -3,5 +3,7 @@
     "source.fixAll": "explicit",
     "source.organizeImports": "explicit",
     "source.sortMembers": "explicit"
-  }
+  },
+  "//": "backend/ is its own Python root — lets Pylance resolve 'import goldenhawk' (a local file, not a pip package)",
+  "python.analysis.extraPaths": ["backend"]
 }
